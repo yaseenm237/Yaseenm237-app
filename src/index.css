@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;500;600;700;800&display=swap');
+
+@theme {
+  --font-sans: "Inter", "Noto Sans Devanagari", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  background-color: #f8fafc;
+  font-family: var(--font-sans);
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom micro-animations */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* High-fidelity Print Stylesheet */
+@media print {
+  /* Hide interactive editing controls */
+  #header-bar,
+  #settings-panel,
+  #cutting-list-panel,
+  #preset-loader,
+  #add-row-btn,
+  #clear-list-btn,
+  #print-btn,
+  #csv-btn,
+  #json-btn,
+  #algo-selector,
+  #compare-algos-btn,
+  #compare-panel,
+  #empty-state-add-btn,
+  .unplaced-parts-indicator,
+  td:last-child, /* Hide delete column */
+  th:last-child {
+    display: none !important;
+  }
+
+  /* Reset layout for full page print */
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Ensure the visualizer takes full width */
+  #app-container {
+    display: block !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Expand panels */
+  #main-grid {
+    display: block !important;
+  }
+
+  #right-column {
+    width: 100% !important;
+    display: block !important;
+  }
+
+  /* Card and Sheet print layout */
+  [id^="sheet-card-"] {
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 20px !important;
+  }
+
+  /* Printable Title showing carpentry header */
+  #print-header {
+    display: block !important;
+    border-bottom: 2px solid #0f172a !important;
+    margin-bottom: 20px !important;
+    padding-bottom: 10px !important;
+  }
+
+  /* Ensure background colors are printed */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  svg {
+    max-height: 5in !important;
+  }
+}
+
+/* Hide print header during screen view */
+#print-header {
+  display: none;
+}

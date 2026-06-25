@@ -1,0 +1,6 @@
+{
+  "name": "Smart Carpentry Optimizer",
+  "description": "A professional 2D cutting list optimizer and layout generator for carpenters and woodworkers. Supports edge banding, grain direction, blade kerf, trim margin, and multiple packing algorithms with PDF/CSV export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
