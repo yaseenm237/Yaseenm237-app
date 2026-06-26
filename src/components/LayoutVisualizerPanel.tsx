@@ -94,6 +94,8 @@ export default function LayoutVisualizerPanel({
   const [zoom, setZoom] = useState(100);
   const [showGrid, setShowGrid] = useState(true);
   const [showRuler, setShowRuler] = useState(true);
+  const [showGrandSummary, setShowGrandSummary] = useState(false);
+  const [showCutSequence, setShowCutSequence] = useState(false);
 
   const S_L = settings.sheetL;
   const S_W = settings.sheetW;
@@ -446,7 +448,7 @@ export default function LayoutVisualizerPanel({
             </button>
           </div>
 
-          {/* Grid & Ruler Toggles */}
+          {/* Grid, Ruler & Cut Sequence Toggles */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl shrink-0">
             <button
               id="grid-toggle-btn"
@@ -473,6 +475,19 @@ export default function LayoutVisualizerPanel({
               title={isHindi ? "पैमाना दिखाएं/छिपाएं" : "Show/Hide Ruler"}
             >
               {isHindi ? "पैमाना" : "Ruler"}
+            </button>
+            <button
+              id="sequence-toggle-btn"
+              type="button"
+              onClick={() => setShowCutSequence(prev => !prev)}
+              className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                showCutSequence
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm shadow-rose-100'
+                  : 'bg-white text-slate-500 border-slate-200 hover:text-slate-700 hover:bg-white'
+              }`}
+              title={isHindi ? "कटिंग का रास्ता (एल्गोरिथम) चालू/बंद करें" : "Show/Hide Cutting Sequence path"}
+            >
+              {isHindi ? "कटिंग पाथ" : "Cut Path"}
             </button>
           </div>
 
@@ -506,9 +521,13 @@ export default function LayoutVisualizerPanel({
       {/* Visual Sheets Render */}
       <div className="flex flex-col gap-8">
         {layouts.map((layout, lIdx) => {
-          // Let's get raw sheet dimension in mm directly to map precisely
-          const rawLMm = convertToMm(S_L, unit);
-          const rawWMm = convertToMm(S_W, unit);
+          // Let's get raw sheet dimension in mm directly from the layout (adding back trim)
+          const rawLMm = layout.width + (2 * T);
+          const rawWMm = layout.height + (2 * T);
+          
+          // Compute the displayed dimensions in the current unit
+          const displayL = convertMmToUnit(rawLMm, unit);
+          const displayW = convertMmToUnit(rawWMm, unit);
 
           // Margins inside SVG
           const pad = 30;
@@ -524,16 +543,31 @@ export default function LayoutVisualizerPanel({
               {/* Card Header */}
               <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2 flex-wrap">
                     {isHindi ? `शीट नंबर ${layout.sheetIndex} का नक्शा` : `Sheet #${layout.sheetIndex} Cutting Layout`}
+                    {layout.materialName && (
+                      <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-100">
+                        {layout.materialName}
+                      </span>
+                    )}
                     {customLayoutOverrides[layout.sheetIndex] && (
                       <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
                         {isHindi ? "मैनुअल रूप से बदला गया" : "Manually Adjusted"}
                       </span>
                     )}
                   </h4>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    {translations.sheet_l}: {S_L} {unit} | {translations.sheet_w}: {S_W} {unit}
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span>{translations.sheet_l}: {displayL} {unit} | {translations.sheet_w}: {displayW} {unit}</span>
+                    {layout.wasteRects && layout.wasteRects.filter(w => w.w >= 250 && w.h >= 250).length > 0 && (
+                      <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-100/60 text-[10px]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        {isHindi ? 'बचे प्रमुख पुन: प्रयोज्य कतरन:' : 'Major Offcuts:'} {' '}
+                        {layout.wasteRects
+                          .filter(w => w.w >= 250 && w.h >= 250)
+                          .map((w) => `${formatDim(w.w)} x ${formatDim(w.h)}`)
+                          .join(', ')}
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -552,7 +586,7 @@ export default function LayoutVisualizerPanel({
                       <div className="flex items-center gap-1 px-2">
                         <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping shrink-0" />
                         <span className="text-[10px] font-extrabold text-indigo-800 uppercase tracking-wider">
-                          {isHindi ? "पहेली मोड" : "Puzzle Mode"}
+                          {isHindi ? "कारपेंटर स्केलिंग" : "Carpenter Scaling"}
                         </span>
                       </div>
                       <label className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-600 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl cursor-pointer hover:bg-slate-50 shadow-sm">
@@ -612,7 +646,7 @@ export default function LayoutVisualizerPanel({
                         title={isHindi ? "इस शीट को खुद सेट करें" : "Edit sheet layout manually"}
                       >
                         <Sliders size={12} />
-                        {isHindi ? "पहेली मोड (मैनुअल)" : "Puzzle Mode (Manual)"}
+                        {isHindi ? "कारपेंटर स्केलिंग" : "Carpenter Scaling"}
                       </button>
                       
                       {customLayoutOverrides[layout.sheetIndex] && (
@@ -646,7 +680,7 @@ export default function LayoutVisualizerPanel({
                       <p className="font-bold">
                         {isHindi 
                           ? "पहेली मोड सक्रिय है! पुर्जों को पकड़कर मनचाही जगह पर खिसकाएं:"
-                          : "Puzzle Mode is active! Grab and slide parts to arrange them manually:"}
+                          : "Carpenter Scaling is active! Grab and slide parts to arrange them manually:"}
                       </p>
                       <ul className="list-disc pl-4 mt-1 space-y-0.5 text-[11px] text-amber-700 font-medium">
                         <li>{isHindi ? "पुर्जे को दबाकर (या टच करके) कहीं भी खिसकाएं (drag & drop)।" : "Click and hold to drag any part around."}</li>
@@ -658,7 +692,7 @@ export default function LayoutVisualizerPanel({
                   </div>
                 )}
 
-                <div className="w-full max-w-4xl bg-white shadow-inner rounded-lg p-2 border border-slate-200/60 overflow-auto select-none">
+                <div className="w-full max-w-4xl bg-slate-900 shadow-inner rounded-lg p-3 border-4 border-slate-800 overflow-auto select-none">
                   <div 
                     style={{ 
                       width: `${zoom}%`, 
@@ -876,7 +910,7 @@ export default function LayoutVisualizerPanel({
                             y1={pad - 5 - tickLen}
                             x2={xPos}
                             y2={pad - 5}
-                            stroke="#64748b"
+                            stroke="#94a3b8"
                             strokeWidth={isMajor ? "1.2" : "0.8"}
                           />
                         );
@@ -889,7 +923,7 @@ export default function LayoutVisualizerPanel({
                               x={xPos}
                               y={pad - 18}
                               textAnchor="middle"
-                              fill="#475569"
+                              fill="#f8fafc"
                               fontSize="8"
                               fontWeight="bold"
                               className="select-none pointer-events-none"
@@ -934,7 +968,7 @@ export default function LayoutVisualizerPanel({
                             y1={yPos}
                             x2={pad - 5}
                             y2={yPos}
-                            stroke="#64748b"
+                            stroke="#94a3b8"
                             strokeWidth={isMajor ? "1.2" : "0.8"}
                           />
                         );
@@ -947,7 +981,7 @@ export default function LayoutVisualizerPanel({
                               x={pad - 18}
                               y={yPos + 3}
                               textAnchor="end"
-                              fill="#475569"
+                              fill="#f8fafc"
                               fontSize="8"
                               fontWeight="bold"
                               className="select-none pointer-events-none"
@@ -1238,6 +1272,47 @@ export default function LayoutVisualizerPanel({
                       });
                     })()}
 
+                    {/* 3.5. Cut Sequence Path */}
+                    {showCutSequence && (() => {
+                      const activeParts = editingSheetIndex === layout.sheetIndex ? editingParts : layout.parts;
+                      if (activeParts.length === 0) return null;
+
+                      // Sort parts by Y then X to simulate a top-to-bottom, left-to-right sequence
+                      const sortedParts = [...activeParts].sort((a, b) => {
+                        if (Math.abs(a.y - b.y) > 50) return a.y - b.y;
+                        return a.x - b.x;
+                      });
+
+                      const points = sortedParts.map(p => {
+                        return `${pad + T + p.x + (p.w - K) / 2},${pad + T + p.y + (p.h - K) / 2}`;
+                      });
+
+                      return (
+                        <g id={`cut-sequence-${layout.sheetIndex}`}>
+                          <polyline 
+                            points={points.join(' ')} 
+                            fill="none" 
+                            stroke="#e11d48" 
+                            strokeWidth="2" 
+                            strokeDasharray="6,4"
+                            className="opacity-80 drop-shadow-md"
+                          />
+                          {sortedParts.map((p, i) => {
+                            const cx = pad + T + p.x + (p.w - K) / 2;
+                            const cy = pad + T + p.y + (p.h - K) / 2;
+                            return (
+                              <g key={`seq-${p.id}`}>
+                                <circle cx={cx} cy={cy} r="8" fill="#e11d48" stroke="#ffffff" strokeWidth="1.5" />
+                                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="9" fontWeight="bold">
+                                  {i + 1}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </g>
+                      );
+                    })()}
+
                     {/* 4. Measurement lines (rulers) around the sheet */}
                     {/* Width Ruler (Right side) */}
                     <line 
@@ -1245,17 +1320,17 @@ export default function LayoutVisualizerPanel({
                       y1={pad} 
                       x2={rawLMm + pad + 10} 
                       y2={rawWMm + pad} 
-                      stroke="#64748b" 
+                      stroke="#94a3b8" 
                       strokeWidth="1" 
                     />
-                    <path d={`M ${rawLMm + pad + 7} ${pad} L ${rawLMm + pad + 13} ${pad}`} stroke="#64748b" strokeWidth="1" />
-                    <path d={`M ${rawLMm + pad + 7} ${rawWMm + pad} L ${rawLMm + pad + 13} ${rawWMm + pad}`} stroke="#64748b" strokeWidth="1" />
+                    <path d={`M ${rawLMm + pad + 7} ${pad} L ${rawLMm + pad + 13} ${pad}`} stroke="#94a3b8" strokeWidth="1" />
+                    <path d={`M ${rawLMm + pad + 7} ${rawWMm + pad} L ${rawLMm + pad + 13} ${rawWMm + pad}`} stroke="#94a3b8" strokeWidth="1" />
                     <text 
                       x={rawLMm + pad + 15} 
                       y={rawWMm / 2 + pad} 
                       transform={`rotate(90, ${rawLMm + pad + 15}, ${rawWMm / 2 + pad})`}
                       textAnchor="middle" 
-                      fill="#475569" 
+                      fill="#f8fafc" 
                       fontSize="9" 
                       fontWeight="bold"
                     >
@@ -1268,16 +1343,16 @@ export default function LayoutVisualizerPanel({
                       y1={rawWMm + pad + 10} 
                       x2={rawLMm + pad} 
                       y2={rawWMm + pad + 10} 
-                      stroke="#64748b" 
+                      stroke="#94a3b8" 
                       strokeWidth="1" 
                     />
-                    <path d={`M ${pad} ${rawWMm + pad + 7} L ${pad} ${rawWMm + pad + 13}`} stroke="#64748b" strokeWidth="1" />
-                    <path d={`M ${rawLMm + pad} ${rawWMm + pad + 7} L ${rawLMm + pad} ${rawWMm + pad + 13}`} stroke="#64748b" strokeWidth="1" />
+                    <path d={`M ${pad} ${rawWMm + pad + 7} L ${pad} ${rawWMm + pad + 13}`} stroke="#94a3b8" strokeWidth="1" />
+                    <path d={`M ${rawLMm + pad} ${rawWMm + pad + 7} L ${rawLMm + pad} ${rawWMm + pad + 13}`} stroke="#94a3b8" strokeWidth="1" />
                     <text 
                       x={rawLMm / 2 + pad} 
                       y={rawWMm + pad + 22} 
                       textAnchor="middle" 
-                      fill="#475569" 
+                      fill="#f8fafc" 
                       fontSize="9" 
                       fontWeight="bold"
                     >
@@ -1358,29 +1433,41 @@ export default function LayoutVisualizerPanel({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
-                        {layout.parts.map((p, pIdx) => (
-                          <tr key={pIdx} className="hover:bg-slate-50/50 whitespace-nowrap">
-                            <td className="py-2 flex items-center gap-2">
-                              <span 
-                                className="w-2.5 h-2.5 rounded-full inline-block border border-slate-300"
-                                style={{ backgroundColor: getPartColor(p.name, pIdx) }}
-                              />
-                              {p.name}
-                            </td>
-                            <td className="py-2 text-slate-800 font-semibold">
-                              {formatDim(p.origL)} x {formatDim(p.origW)}
-                            </td>
-                            <td className="py-2 font-mono text-slate-500">
-                              {p.cutL.toFixed(1)} x {p.cutW.toFixed(1)}
-                            </td>
-                            <td className="py-2">
-                              {p.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : p.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
-                            </td>
-                            <td className="py-2 text-indigo-600 font-semibold text-[11px]">
-                              {getEdgeBandingSummary(p.edges, isHindi)}
-                            </td>
-                          </tr>
-                        ))}
+                        {(() => {
+                          const groupedParts = new Map<string, any>();
+                          layout.parts.forEach(p => {
+                            const key = `${p.name}_${p.origL}_${p.origW}_${p.cutL}_${p.cutW}_${p.grain}_${JSON.stringify(p.edges)}`;
+                            if (groupedParts.has(key)) {
+                              groupedParts.get(key)!.qty += 1;
+                            } else {
+                              groupedParts.set(key, { ...p, qty: 1 });
+                            }
+                          });
+                          
+                          return Array.from(groupedParts.values()).map((p, pIdx) => (
+                            <tr key={pIdx} className="hover:bg-slate-50/50 whitespace-nowrap">
+                              <td className="py-2 flex items-center gap-2">
+                                <span 
+                                  className="w-2.5 h-2.5 rounded-full inline-block border border-slate-300"
+                                  style={{ backgroundColor: getPartColor(p.name, pIdx) }}
+                                />
+                                {p.name} {p.qty > 1 && <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded-full ml-1">x{p.qty}</span>}
+                              </td>
+                              <td className="py-2 text-slate-800 font-semibold">
+                                {formatDim(p.origL)} x {formatDim(p.origW)}
+                              </td>
+                              <td className="py-2 font-mono text-slate-500">
+                                {p.cutL.toFixed(1)} x {p.cutW.toFixed(1)}
+                              </td>
+                              <td className="py-2">
+                                {p.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : p.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
+                              </td>
+                              <td className="py-2 text-indigo-600 font-semibold text-[11px]">
+                                {getEdgeBandingSummary(p.edges, isHindi)}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -1443,6 +1530,81 @@ export default function LayoutVisualizerPanel({
           );
         })}
       </div>
+
+      {/* Grand Total Summary Node */}
+      {layouts.length > 0 && (
+        <div className="mt-8 bg-indigo-900 rounded-2xl p-6 text-white shadow-xl">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <span className="bg-indigo-500 p-1.5 rounded-lg">📋</span>
+              {isHindi ? 'कुल सामग्री सारांश (Grand Total)' : 'Grand Total Summary'}
+            </h3>
+            <button
+              onClick={() => setShowGrandSummary(!showGrandSummary)}
+              className="bg-indigo-700 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-colors"
+            >
+              {showGrandSummary 
+                ? (isHindi ? 'सारांश छिपाएं' : 'Hide Summary') 
+                : (isHindi ? 'सारांश दिखाएं' : 'Generate Summary')}
+            </button>
+          </div>
+          
+          {showGrandSummary && (
+            <div className="bg-indigo-950/50 rounded-xl overflow-hidden border border-indigo-500/20 animate-in fade-in slide-in-from-top-4 duration-300">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-indigo-900/80 text-indigo-200">
+                  <tr>
+                    <th className="py-3 px-4">{isHindi ? 'आइटम का नाम / आकार' : 'Item Name / Size'}</th>
+                    <th className="py-3 px-4 text-center">{isHindi ? 'कुल मात्रा' : 'Total Qty'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-indigo-800/30">
+                  {(() => {
+                    const globalGroup = new Map<string, any>();
+                    layouts.forEach(layout => {
+                      layout.parts.forEach(p => {
+                        const key = `${p.name}_${p.origL}_${p.origW}`;
+                        if (globalGroup.has(key)) {
+                          globalGroup.get(key)!.qty += 1;
+                        } else {
+                          globalGroup.set(key, { name: p.name, l: p.origL, w: p.origW, qty: 1 });
+                        }
+                      });
+                    });
+                    
+                    let grandTotalQty = 0;
+                    
+                    return Array.from(globalGroup.values()).map((p, idx) => {
+                      grandTotalQty += p.qty;
+                      
+                      return (
+                        <tr key={idx} className="hover:bg-indigo-800/20">
+                          <td className="py-3 px-4">
+                            <div className="font-semibold">{p.name}</div>
+                            <div className="text-xs text-indigo-300 font-mono">{p.l.toFixed(1)} x {p.w.toFixed(1)} {settings.unit}</div>
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold text-lg text-emerald-300">
+                            {p.qty}
+                          </td>
+                        </tr>
+                      );
+                    }).concat([
+                      <tr key="total" className="bg-indigo-800/50 font-bold text-lg border-t-2 border-indigo-500">
+                        <td className="py-4 px-4 text-right">
+                          {isHindi ? 'कुल पीसेस (Total Pieces) :' : 'Total Pieces :'}
+                        </td>
+                        <td className="py-4 px-4 text-center text-emerald-400">
+                          {grandTotalQty}
+                        </td>
+                      </tr>
+                    ]);
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { PartInput, Language, Grain, Edges } from '../types';
+import { PartInput, Language, Grain, Edges, SheetSettings } from '../types';
 import { CARPENTRY_PRESETS } from '../utils/presets';
 import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle } from 'lucide-react';
 
@@ -14,6 +14,7 @@ interface CuttingListPanelProps {
   language: Language;
   translations: any;
   unit: string;
+  settings: SheetSettings;
 }
 
 export default function CuttingListPanel({
@@ -21,10 +22,12 @@ export default function CuttingListPanel({
   onChange,
   language,
   translations,
-  unit
+  unit,
+  settings
 }: CuttingListPanelProps) {
   const isHindi = language === 'Hindi';
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const hasMultiMaterials = (settings.stockItems?.length || 0) > 1;
 
   const handleAddRow = () => {
     const newPart: PartInput = {
@@ -152,6 +155,7 @@ export default function CuttingListPanel({
             <thead>
               <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 <th className="pb-3 w-[180px]">{translations.h_name}</th>
+                {hasMultiMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'मटीरियल' : 'Material'}</th>}
                 <th className="pb-3 w-[100px]">{translations.h_l} ({unit})</th>
                 <th className="pb-3 w-[100px]">{translations.h_w} ({unit})</th>
                 <th className="pb-3 w-[110px]">{translations.h_grain}</th>
@@ -174,6 +178,24 @@ export default function CuttingListPanel({
                       className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
                     />
                   </td>
+
+                  {/* Material */}
+                  {hasMultiMaterials && (
+                    <td className="py-2.5 pr-2">
+                      <select
+                        value={part.materialId || ''}
+                        onChange={(e) => handleRowChange(part.id, 'materialId', e.target.value || undefined)}
+                        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none font-medium text-slate-700"
+                      >
+                        <option value="">{isHindi ? 'डिफ़ॉल्ट' : 'Default'}</option>
+                        {settings.stockItems?.map(item => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
 
                   {/* Length */}
                   <td className="py-2.5 pr-2">

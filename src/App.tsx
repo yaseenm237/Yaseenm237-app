@@ -6,12 +6,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Language, Unit, PartInput, SheetSettings, PackingResult, AlgoComparison } from './types';
 import { runPacking, compareAlgorithms, convertMmToUnit, convertToMm } from './utils/packer';
-import SheetSettingsPanel from './components/SheetSettingsPanel';
+import { generatePdfReport } from './utils/pdfGenerator';
+import SettingsModal from './components/SettingsModal';
 import CuttingListPanel from './components/CuttingListPanel';
 import LayoutVisualizerPanel from './components/LayoutVisualizerPanel';
 import ExportCenterModal from './components/ExportCenterModal';
-import MaterialLibraryPanel from './components/MaterialLibraryPanel';
+import EstimateCalculatorModal from './components/EstimateCalculatorModal';
+import SavedFilesModal, { SavedJob } from './components/SavedFilesModal';
 import ToastContainer, { ToastMessage } from './components/Toast';
+import HeaderMenu from './components/HeaderMenu';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
 import { Material } from './types';
@@ -27,13 +30,16 @@ import {
   Hammer, 
   RefreshCw,
   Undo2,
-  Redo2
+  Redo2,
+  Settings,
+  Calculator,
+  Folder
 } from 'lucide-react';
 
 const TRANSLATIONS = {
   English: {
     title: "Smart Carpentry Optimizer",
-    subtitle: "Professional 2D Wood Cutting & Edge Banding nesting engine",
+    subtitle: "Sahira Interior",
     sheet_l: "Sheet Length",
     sheet_w: "Sheet Width",
     blade_th: "Kerf (mm)",
@@ -86,7 +92,7 @@ const TRANSLATIONS = {
   },
   Hindi: {
     title: "स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र",
-    subtitle: "पेशेवर 2D लकड़ी कटिंग और एजबेंडिंग नेस्टिंग इंजन",
+    subtitle: "साहिरा इंटीरियर (Sahira Interior)",
     sheet_l: "शीट लंबाई",
     sheet_w: "शीट चौड़ाई",
     blade_th: "ब्लेड मोटाई (mm)",
@@ -248,6 +254,8 @@ export default function App() {
     });
   };
 
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   // Synchronize state with LocalStorage
   useEffect(() => {
     try {
@@ -270,6 +278,9 @@ export default function App() {
   const [compareResults, setCompareResults] = useState<AlgoComparison[] | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isCalcOpen, setIsCalcOpen] = useState<boolean>(false);
+  const [isSavedFilesOpen, setIsSavedFilesOpen] = useState<boolean>(false);
+  const [savedJobs, setSavedJobs] = useLocalStorage<SavedJob[]>('carpentry_saved_jobs', []);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isFirstMount = useRef(true);
   const skipAutosaveToast = useRef(false);
@@ -344,10 +355,7 @@ export default function App() {
     }
 
     const timer = setTimeout(() => {
-      const msg = isHindi 
-        ? "परिवर्तन स्वतः सहेजे गए!" 
-        : "Changes autosaved successfully!";
-      addToast(msg, 'success');
+      // Auto-save is now silent as requested
     }, 1200);
 
     return () => clearTimeout(timer);
@@ -378,6 +386,31 @@ export default function App() {
     }, 400); // short delay to show loading state
   };
 
+  // Internal save and reset (Feature 4 & 3)
+  const saveJobToStorageAndReset = () => {
+    const job: SavedJob = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+      name: `Project ${new Date().toLocaleString()}`,
+      date: new Date().toISOString(),
+      parts: [...parts],
+      settings: { ...settings }
+    };
+    setSavedJobs(prev => [job, ...prev]);
+    
+    // Auto-clean
+    setParts([]);
+    setResult({
+      layouts: [],
+      totalSheetsUsed: 0,
+      totalUtilization: 0,
+      overallWastePercent: 0,
+      totalPartsArea: 0,
+      totalBandingLength: 0,
+      unplacedParts: []
+    });
+    setCompareResults(null);
+  };
+
   // CSV Export trigger
   const handleExportCsv = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -400,6 +433,8 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    saveJobToStorageAndReset();
   };
 
   // JSON Export trigger
@@ -417,6 +452,8 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    
+    saveJobToStorageAndReset();
   };
 
   // JSON Import trigger
@@ -448,7 +485,18 @@ export default function App() {
 
   // Print report trigger
   const handlePrint = () => {
-    window.print();
+    if (result && parts && parts.length > 0) {
+      try {
+        generatePdfReport(parts, settings, result, language);
+        saveJobToStorageAndReset();
+      } catch (err) {
+        console.error("PDF generation failed, falling back to window.print:", err);
+        window.print();
+        saveJobToStorageAndReset();
+      }
+    } else {
+      window.print();
+    }
   };
 
   // Find the winning algorithm (lowest sheet count, highest utilization)
@@ -506,82 +554,34 @@ export default function App() {
       </div>
 
       {/* Screen View Header */}
-      <header id="header-bar" className="bg-slate-900 text-white shadow-md border-b border-indigo-500/10 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <header id="header-bar" className="bg-white/80 backdrop-blur-xl sticky top-0 z-40 text-slate-800 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.1)] border-b border-slate-200/60 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-tr from-indigo-700 to-indigo-500 rounded-xl text-white shadow-md shadow-indigo-600/20 border border-indigo-400/20">
-            <Hammer size={24} className="animate-pulse" />
+          <div className="w-12 h-12 rounded-full overflow-hidden shadow-md shadow-indigo-600/20 border-2 border-indigo-100 flex items-center justify-center bg-white shrink-0">
+            <img src="/src/assets/images/shahirah_logo_1782493245476.jpg" alt="Sahirah Logo" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight flex items-center gap-2">
+            <h1 className="text-xl font-extrabold tracking-tight flex items-center gap-2 text-slate-900">
               {t.title}
-              <span className="text-[10px] font-bold bg-indigo-500/15 border border-indigo-400/20 text-indigo-300 rounded px-1.5 py-0.5 tracking-normal uppercase shrink-0">PRO</span>
+              <span className="text-[9px] font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-full px-2 py-0.5 tracking-widest uppercase shrink-0">PRO</span>
             </h1>
-            <p className="text-xs text-slate-400 font-medium">{t.subtitle}</p>
+            <p className="text-xs text-slate-500 font-medium">{t.subtitle}</p>
           </div>
         </div>
 
         {/* Global Controls */}
         <div className="flex items-center gap-3">
-          {/* Export Center Trigger */}
-          <button
-            id="open-export-center-btn"
-            onClick={() => setIsExportOpen(true)}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 shadow-md shadow-indigo-950/10 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-          >
-            <span className="font-semibold text-xs">🚀</span>
-            {isHindi ? 'एक्सपोर्ट सेंटर' : 'Export Center'}
-          </button>
-
-          {/* Undo / Redo Actions Group */}
-          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700 shrink-0">
-            <button
-              id="undo-btn"
-              onClick={handleUndo}
-              disabled={!canUndo}
-              title={isHindi ? "पूर्ववत (Ctrl+Z)" : "Undo (Ctrl+Z)"}
-              className={`p-1.5 rounded transition-all flex items-center justify-center cursor-pointer ${
-                canUndo 
-                  ? "text-slate-100 hover:bg-slate-700 hover:text-indigo-400 active:scale-95" 
-                  : "text-slate-500 cursor-not-allowed opacity-50"
-              }`}
-            >
-              <Undo2 size={15} />
-            </button>
-            <button
-              id="redo-btn"
-              onClick={handleRedo}
-              disabled={!canRedo}
-              title={isHindi ? "रीडू (Ctrl+Y)" : "Redo (Ctrl+Y)"}
-              className={`p-1.5 rounded transition-all flex items-center justify-center cursor-pointer ${
-                canRedo 
-                  ? "text-slate-100 hover:bg-slate-700 hover:text-indigo-400 active:scale-95" 
-                  : "text-slate-500 cursor-not-allowed opacity-50"
-              }`}
-            >
-              <Redo2 size={15} />
-            </button>
-          </div>
-
-          {/* Language Toggle */}
-          <button
-            id="lang-toggle-btn"
-            onClick={handleLanguageToggle}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 hover:border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all cursor-pointer"
-          >
-            <Languages size={14} className="text-indigo-400" />
-            {isHindi ? 'ENGLISH' : 'हिन्दी'}
-          </button>
-
-          {/* Inline JSON File Upload */}
-          <label className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 hover:border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer">
-            <span className="text-indigo-400 font-bold">📥</span> {t.btn_import_json}
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImportJson}
-              className="hidden"
-            />
-          </label>
+          <HeaderMenu 
+            language={language}
+            onOpenSavedFiles={() => setIsSavedFilesOpen(true)}
+            onOpenCalc={() => setIsCalcOpen(true)}
+            onOpenExport={() => setIsExportOpen(true)}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onToggleLanguage={handleLanguageToggle}
+            onImportJson={handleImportJson}
+          />
         </div>
       </header>
 
@@ -590,27 +590,43 @@ export default function App() {
         
         {/* Sidebar Configuration Panel - Bento Cell */}
         <aside id="sidebar-settings" className="lg:col-span-4 xl:col-span-3 flex flex-col gap-6">
-          <SheetSettingsPanel
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">
+                {isHindi ? 'मटीरियल स्टॉक' : 'Material Stock'}
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isHindi ? 'सक्रिय बोर्ड्स और सेटिंग्स' : 'Active boards and parameters'}
+              </p>
+            </div>
+            
+            <div className="flex flex-col gap-2">
+              {(settings.stockItems || []).map((item, idx) => (
+                <div key={item.id} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-sm font-semibold text-slate-700 truncate max-w-[120px]">{item.name}</span>
+                  <span className="text-xs font-mono text-slate-500">{item.length}x{item.width} {settings.unit}</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="mt-2 w-full py-2.5 flex items-center justify-center gap-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl transition-colors font-semibold text-sm"
+            >
+              <Settings size={16} />
+              {isHindi ? 'स्टॉक और सेटिंग प्रबंधित करें' : 'Manage Stock & Settings'}
+            </button>
+          </div>
+        </aside>
+
+        {isSettingsOpen && (
+          <SettingsModal
             settings={settings}
             onChange={setSettings}
+            onClose={() => setIsSettingsOpen(false)}
             language={language}
-            translations={t}
           />
-          <MaterialLibraryPanel
-            settings={settings}
-            onSelectMaterial={(mat) => {
-              setSettings((prev) => ({
-                ...prev,
-                unit: mat.unit,
-                sheetL: mat.sheetL,
-                sheetW: mat.sheetW,
-                sheetCost: mat.cost
-              }));
-            }}
-            language={language}
-            addToast={addToast}
-          />
-        </aside>
+        )}
 
         {/* Main Content Area - Bento Area */}
         <div id="main-workspace" className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
@@ -622,6 +638,7 @@ export default function App() {
               language={language}
               translations={t}
               unit={settings.unit}
+              settings={settings}
             />
           </section>
 
@@ -768,6 +785,29 @@ export default function App() {
         partsCount={parts.reduce((acc, p) => acc + (p.quantity || 0), 0)}
         sheetsCount={result?.totalSheetsUsed || 0}
         utilization={result?.totalUtilization || 0}
+      />
+
+      {/* Estimate Calculator Modal */}
+      {isCalcOpen && (
+        <EstimateCalculatorModal
+          onClose={() => setIsCalcOpen(false)}
+          language={language}
+        />
+      )}
+
+      {/* Saved Files Modal */}
+      <SavedFilesModal
+        isOpen={isSavedFilesOpen}
+        onClose={() => setIsSavedFilesOpen(false)}
+        savedJobs={savedJobs}
+        onDeleteJob={(id) => setSavedJobs(prev => prev.filter(j => j.id !== id))}
+        onLoadJob={(job) => {
+          setWorkspaceState({
+            parts: job.parts,
+            settings: job.settings
+          });
+        }}
+        language={language}
       />
 
       {/* Toast Notification Container */}

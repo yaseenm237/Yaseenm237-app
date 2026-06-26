@@ -142,13 +142,106 @@ export function runPacking(
   partsInput: PartInput[],
   settings: SheetSettings
 ): PackingResult {
+  // If there are no multi-materials or stockItems defined, just use the single runner
+  if (!settings.stockItems || settings.stockItems.length === 0) {
+    return runPackingSingleMaterial(partsInput, settings);
+  }
+
+  // Otherwise, group parts by material
+  const materialGroups = new Map<string | undefined, PartInput[]>();
+  for (const part of partsInput) {
+    const matId = part.materialId;
+    if (!materialGroups.has(matId)) {
+      materialGroups.set(matId, []);
+    }
+    materialGroups.get(matId)!.push(part);
+  }
+
+  const finalResult: PackingResult = {
+    layouts: [],
+    totalSheetsUsed: 0,
+    totalUtilization: 0,
+    overallWastePercent: 0,
+    totalPartsArea: 0,
+    totalBandingLength: 0,
+    unplacedParts: []
+  };
+
+  let globalSheetIndex = 1;
+  let totalAreaUsedByAll = 0;
+  let totalAreaAvailableByAll = 0;
+
+  for (const [matId, groupParts] of materialGroups.entries()) {
+    let overrideL: number | undefined;
+    let overrideW: number | undefined;
+    let materialName: string | undefined;
+
+    if (matId) {
+      const stockItem = settings.stockItems.find(s => s.id === matId);
+      if (stockItem) {
+        overrideL = stockItem.length;
+        overrideW = stockItem.width;
+        materialName = stockItem.name;
+      }
+    }
+
+    const groupResult = runPackingSingleMaterial(
+      groupParts,
+      settings,
+      overrideL,
+      overrideW,
+      materialName
+    );
+
+    // Merge group results into final result
+    for (const layout of groupResult.layouts) {
+      layout.sheetIndex = globalSheetIndex++;
+      finalResult.layouts.push(layout);
+      
+      totalAreaUsedByAll += layout.usedArea;
+      totalAreaAvailableByAll += layout.totalArea;
+    }
+
+    finalResult.totalSheetsUsed += groupResult.totalSheetsUsed;
+    finalResult.totalPartsArea += groupResult.totalPartsArea;
+    finalResult.totalBandingLength += groupResult.totalBandingLength;
+    
+    // Merge unplaced
+    for (const u of groupResult.unplacedParts) {
+      const existing = finalResult.unplacedParts.find(e => e.name === u.name);
+      if (existing) {
+        existing.qty += u.qty;
+      } else {
+        finalResult.unplacedParts.push({ ...u });
+      }
+    }
+  }
+
+  if (totalAreaAvailableByAll > 0) {
+    finalResult.totalUtilization = (totalAreaUsedByAll / totalAreaAvailableByAll) * 100;
+    finalResult.overallWastePercent = 100 - finalResult.totalUtilization;
+  }
+
+  return finalResult;
+}
+
+export function runPackingSingleMaterial(
+  partsInput: PartInput[],
+  settings: SheetSettings,
+  sheetLOverride?: number,
+  sheetWOverride?: number,
+  materialNameOverride?: string
+): PackingResult {
   const unit = settings.unit;
   const edgeTh = settings.edgeTh;
   const K = settings.bladeTh; // Kerf in mm
   const T = settings.trimMargin; // Trim in mm
 
-  const S_L = convertToMm(settings.sheetL, unit);
-  const S_W = convertToMm(settings.sheetW, unit);
+  const rawL = sheetLOverride ?? settings.sheetL;
+  const rawW = sheetWOverride ?? settings.sheetW;
+
+  const S_L = convertToMm(rawL, unit);
+  const S_W = convertToMm(rawW, unit);
 
   // usable dimensions for each sheet
   const binW = Math.max(1.0, S_L - 2 * T); // Width along X axis (Sheet Length)
@@ -415,7 +508,8 @@ export function runPacking(
         usedArea: sheetUsedArea,
         totalArea,
         wastePercent: Math.max(0, wastePercent),
-        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet)
+        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet),
+        materialName: materialNameOverride
       });
 
       remainingParts = unplacedThisSheet;
@@ -599,7 +693,8 @@ export function runPacking(
         usedArea: sheetUsedArea,
         totalArea,
         wastePercent: Math.max(0, wastePercent),
-        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet)
+        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet),
+        materialName: materialNameOverride
       });
 
       remainingParts = unplacedThisSheet;
@@ -923,7 +1018,8 @@ export function runPacking(
         usedArea: sheetUsedArea,
         totalArea,
         wastePercent: Math.max(0, wastePercent),
-        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet)
+        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet),
+        materialName: materialNameOverride
       });
 
       // Update remaining list for next sheet

@@ -23,6 +23,15 @@ export interface PartInput {
   allowRot: boolean;
   quantity: number;
   edges: Edges;
+  materialId?: string; // Links to a specific stock material ID
+}
+
+export interface StockItem {
+  id: string;
+  name: string; // e.g. "18mm Plywood"
+  length: number;
+  width: number;
+  cost: number;
 }
 
 export interface SheetSettings {
@@ -35,6 +44,7 @@ export interface SheetSettings {
   stock: number; // Quantity of sheets in stock
   algorithm: string;
   sheetCost: number; // Cost per sheet
+  stockItems?: StockItem[]; // List of available sheet materials in stock
 }
 
 export interface PackedPart {
@@ -62,6 +72,7 @@ export interface SheetLayout {
   totalArea: number;
   wastePercent: number;
   wasteRects?: { x: number; y: number; w: number; h: number }[];
+  materialName?: string; // Optional name of the material for this sheet
 }
 
 export interface PackingResult {
