@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { PartInput, Language, Grain, Edges, SheetSettings } from '../types';
 import { CARPENTRY_PRESETS } from '../utils/presets';
-import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle, X } from 'lucide-react';
 
 interface CuttingListPanelProps {
   parts: PartInput[];
@@ -15,6 +15,7 @@ interface CuttingListPanelProps {
   translations: any;
   unit: string;
   settings: SheetSettings;
+  onOpenCabinetDesigner?: () => void;
 }
 
 export default function CuttingListPanel({
@@ -23,13 +24,152 @@ export default function CuttingListPanel({
   language,
   translations,
   unit,
-  settings
+  settings,
+  onOpenCabinetDesigner
 }: CuttingListPanelProps) {
   const isHindi = language === 'Hindi';
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState<boolean>(false);
+  const [pasteText, setPasteText] = useState<string>('');
+  const [pasteError, setPasteError] = useState<string>('');
+  const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append');
   const hasMultiMaterials = (settings.stockItems?.length || 0) > 1;
+  const hasEdgeMaterials = (settings.edgeBandItems?.length || 0) > 0;
+
+  // Smart spreadsheet rows parser
+  const parsePastedData = (text: string): PartInput[] => {
+    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+    if (lines.length === 0) return [];
+
+    const parsedParts: PartInput[] = [];
+    
+    // Header detection matching both English and Hindi
+    const firstLineTokens = lines[0].split(/\t/).map(t => t.trim().toLowerCase());
+    let hasHeaders = false;
+    let nameColIdx = -1;
+    let lengthColIdx = -1;
+    let widthColIdx = -1;
+    let qtyColIdx = -1;
+
+    const nameHeaders = ['name', 'part', 'item', 'details', 'नाम', 'पुर्जा', 'विवरण'];
+    const lengthHeaders = ['length', 'l', 'len', 'लंबाई', 'l (cm)', 'l (mm)', 'l (inch)', 'लम्बाई'];
+    const widthHeaders = ['width', 'w', 'wid', 'चौड़ाई', 'w (cm)', 'w (mm)', 'w (inch)', 'चौड़ाई'];
+    const qtyHeaders = ['qty', 'quantity', 'count', 'no', 'मात्रा', 'पीस', 'संख्या'];
+
+    firstLineTokens.forEach((token, idx) => {
+      if (nameHeaders.some(h => token.includes(h))) {
+        nameColIdx = idx;
+        hasHeaders = true;
+      } else if (lengthHeaders.some(h => token === h || token.startsWith(h))) {
+        lengthColIdx = idx;
+        hasHeaders = true;
+      } else if (widthHeaders.some(h => token === h || token.startsWith(h))) {
+        widthColIdx = idx;
+        hasHeaders = true;
+      } else if (qtyHeaders.some(h => token === h || token.startsWith(h))) {
+        qtyColIdx = idx;
+        hasHeaders = true;
+      }
+    });
+
+    const startIndex = hasHeaders ? 1 : 0;
+
+    for (let i = startIndex; i < lines.length; i++) {
+      const line = lines[i];
+      const tokens = line.split(/\t/).map(t => t.trim());
+      
+      let finalTokens = tokens;
+      // Fallback split modes (comma, semi-colon, double-spaces)
+      if (tokens.length === 1) {
+        if (line.includes(',')) {
+          finalTokens = line.split(',').map(t => t.trim());
+        } else if (line.includes(';')) {
+          finalTokens = line.split(';').map(t => t.trim());
+        } else {
+          const spaceTokens = line.split(/ {2,}/).map(t => t.trim());
+          if (spaceTokens.length > 1) {
+            finalTokens = spaceTokens;
+          }
+        }
+      }
+
+      if (finalTokens.length === 0 || (finalTokens.length === 1 && !finalTokens[0])) continue;
+
+      let name = '';
+      let length = 0;
+      let width = 0;
+      let qty = 1;
+
+      if (hasHeaders) {
+        if (nameColIdx !== -1 && nameColIdx < finalTokens.length) {
+          name = finalTokens[nameColIdx];
+        }
+        if (lengthColIdx !== -1 && lengthColIdx < finalTokens.length) {
+          length = parseFloat(finalTokens[lengthColIdx]) || 0;
+        }
+        if (widthColIdx !== -1 && widthColIdx < finalTokens.length) {
+          width = parseFloat(finalTokens[widthColIdx]) || 0;
+        }
+        if (qtyColIdx !== -1 && qtyColIdx < finalTokens.length) {
+          qty = Math.max(1, parseInt(finalTokens[qtyColIdx], 10) || 1);
+        }
+      } else {
+        // Automatic column content matching based on column counts
+        if (finalTokens.length >= 4) {
+          const firstIsNum = !isNaN(Number(finalTokens[0]));
+          if (!firstIsNum) {
+            name = finalTokens[0];
+            length = parseFloat(finalTokens[1]) || 0;
+            width = parseFloat(finalTokens[2]) || 0;
+            qty = Math.max(1, parseInt(finalTokens[3], 10) || 1);
+          } else {
+            length = parseFloat(finalTokens[0]) || 0;
+            width = parseFloat(finalTokens[1]) || 0;
+            qty = Math.max(1, parseInt(finalTokens[2], 10) || 1);
+            name = finalTokens[3] || `Part ${length}x${width}`;
+          }
+        } else if (finalTokens.length === 3) {
+          length = parseFloat(finalTokens[0]) || 0;
+          width = parseFloat(finalTokens[1]) || 0;
+          qty = Math.max(1, parseInt(finalTokens[2], 10) || 1);
+          name = `Part ${length}x${width}`;
+        } else if (finalTokens.length === 2) {
+          length = parseFloat(finalTokens[0]) || 0;
+          width = parseFloat(finalTokens[1]) || 0;
+          qty = 1;
+          name = `Part ${length}x${width}`;
+        } else {
+          length = parseFloat(finalTokens[0]) || 0;
+          width = 0;
+          qty = 1;
+          name = `Part ${length}`;
+        }
+      }
+
+      if (!name) {
+        name = `Part ${length}x${width}`;
+      }
+
+      parsedParts.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+        name: name,
+        length: length,
+        width: width,
+        grain: 'L',
+        allowRot: false,
+        quantity: qty,
+        edges: { T: false, B: false, L: false, R: false }
+      });
+    }
+
+    return parsedParts;
+  };
 
   const handleAddRow = () => {
+    const defaultMaterialId = settings.stockItems && settings.stockItems.length > 0
+      ? settings.stockItems[0].id
+      : undefined;
+
     const newPart: PartInput = {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
       name: '',
@@ -38,7 +178,8 @@ export default function CuttingListPanel({
       grain: 'L',
       allowRot: false,
       quantity: 1,
-      edges: { T: false, B: false, L: false, R: false }
+      edges: { T: false, B: false, L: false, R: false },
+      materialId: defaultMaterialId
     };
     onChange([...parts, newPart]);
   };
@@ -114,22 +255,47 @@ export default function CuttingListPanel({
           </div>
         </div>
 
-        {/* Preset Selector */}
-        <div className="flex items-center gap-2">
-          <Sparkles size={16} className="text-indigo-600 animate-pulse" />
-          <select
-            id="preset-loader"
-            value={selectedPresetId}
-            onChange={handlePresetLoad}
-            className="text-xs font-bold border border-slate-200 rounded-lg py-1.5 px-3 bg-indigo-50/60 text-indigo-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        {/* Actions bar (Presets + Sheets Paste) */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Preset Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
+            <Sparkles size={14} className="text-indigo-600 animate-pulse ml-1" />
+            <select
+              id="preset-loader"
+              value={selectedPresetId}
+              onChange={handlePresetLoad}
+              className="text-xs font-bold border-none bg-transparent text-indigo-900 focus:outline-none focus:ring-0 cursor-pointer pr-4"
+            >
+              <option value="">-- {translations.presets} --</option>
+              {CARPENTRY_PRESETS.map(pr => (
+                <option key={pr.id} value={pr.id}>
+                  {isHindi ? pr.nameHi : pr.nameEn}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Paste from Sheets Button */}
+          <button
+            onClick={() => setIsPasteModalOpen(true)}
+            className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/60 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 cursor-pointer shadow-sm shadow-emerald-50"
+            title={isHindi ? "एक्सेल या गूगल शीट्स से पेस्ट करें" : "Paste from Excel / Google Sheets"}
           >
-            <option value="">-- {translations.presets} --</option>
-            {CARPENTRY_PRESETS.map(pr => (
-              <option key={pr.id} value={pr.id}>
-                {isHindi ? pr.nameHi : pr.nameEn}
-              </option>
-            ))}
-          </select>
+            <ClipboardList size={14} />
+            {isHindi ? "शीट से पेस्ट" : "Paste from Sheets"}
+          </button>
+
+          {/* 2D Cabinet Designer Trigger Button */}
+          {onOpenCabinetDesigner && (
+            <button
+              onClick={onOpenCabinetDesigner}
+              className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95 cursor-pointer shadow-sm shadow-indigo-50"
+              title={isHindi ? "2D अलमारी डिज़ाइनर खोलें" : "Open 2D Cabinet Designer"}
+            >
+              <Sparkles size={14} className="text-indigo-500 animate-pulse" />
+              {isHindi ? "2D अलमारी डिज़ाइनर" : "2D Cabinet Designer"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -162,6 +328,7 @@ export default function CuttingListPanel({
                 <th className="pb-3 w-[90px]">{translations.allow_rot}</th>
                 <th className="pb-3 w-[80px]">{translations.h_qty}</th>
                 <th className="pb-3 w-[120px]">{translations.h_edges} (T, B, L, R)</th>
+                {hasEdgeMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'एज बैंड टेप' : 'Edge Band'}</th>}
                 <th className="pb-3 w-[50px] text-center"></th>
               </tr>
             </thead>
@@ -291,6 +458,29 @@ export default function CuttingListPanel({
                     </div>
                   </td>
 
+                  {/* Edge Band Material */}
+                  {hasEdgeMaterials && (
+                    <td className="py-2.5 pr-2">
+                      <select
+                        value={part.edgeMaterialId || ''}
+                        disabled={!part.edges.T && !part.edges.B && !part.edges.L && !part.edges.R}
+                        onChange={(e) => handleRowChange(part.id, 'edgeMaterialId', e.target.value || undefined)}
+                        className={`w-full text-xs border rounded-lg px-2 py-2 focus:outline-none font-medium transition-colors ${
+                          (!part.edges.T && !part.edges.B && !part.edges.L && !part.edges.R)
+                            ? 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed'
+                            : 'bg-white border-slate-200 text-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                        }`}
+                      >
+                        <option value="">{isHindi ? 'डिफ़ॉल्ट टेप' : 'Default Tape'}</option>
+                        {settings.edgeBandItems?.map(item => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
+
                   {/* Delete Button */}
                   <td className="py-2.5 text-center">
                     <button
@@ -331,6 +521,173 @@ export default function CuttingListPanel({
           </button>
         )}
       </div>
+
+      {/* Paste from Excel / Google Sheets Modal */}
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                  <ClipboardList size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">
+                    {isHindi ? 'एक्सेल / गूगल शीट्स से पेस्ट करें' : 'Paste from Excel / Google Sheets'}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isHindi 
+                      ? 'स्प्रेडशीट से कॉलम कॉपी करके नीचे पेस्ट करें (नाम, लंबाई, चौड़ाई, मात्रा)' 
+                      : 'Copy columns from your spreadsheet and paste them below (Name, Length, Width, Qty)'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsPasteModalOpen(false);
+                  setPasteText('');
+                  setPasteError('');
+                }} 
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"
+              >
+                <X size={20} className="text-slate-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto flex-1 bg-white space-y-4">
+              {/* Instructions */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-600 space-y-2">
+                <p className="font-bold text-slate-700">
+                  {isHindi ? '💡 कैसे इस्तेमाल करें:' : '💡 Instructions:'}
+                </p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>
+                    {isHindi 
+                      ? 'कॉलम का क्रम हो सकता है: नाम, लंबाई, चौड़ाई, मात्रा' 
+                      : 'Supported formats: "Name [tab] Length [tab] Width [tab] Qty"'}
+                  </li>
+                  <li>
+                    {isHindi 
+                      ? 'कॉलम के हेडर (Name, Length, Width, Qty) भी शामिल हो सकते हैं, एल्गोरिदम उन्हें खुद पहचान लेगा।' 
+                      : 'Includes header detection. If column headers exist, the app automatically matches them.'}
+                  </li>
+                  <li>
+                    {isHindi 
+                      ? 'अगर केवल 3 कॉलम हैं, तो उन्हें लंबाई, चौड़ाई और मात्रा माना जाएगा।' 
+                      : 'If 3 columns are pasted, they are treated as: Length, Width, Qty (and names are auto-generated).'}
+                  </li>
+                </ul>
+                <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between items-center text-[11px] text-slate-400 font-mono">
+                  <span>Example format:</span>
+                  <span>Side Panel [tab] 720 [tab] 560 [tab] 4</span>
+                </div>
+              </div>
+
+              {/* Paste area */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  {isHindi ? 'यहाँ पेस्ट करें:' : 'Paste Here:'}
+                </label>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => {
+                    setPasteText(e.target.value);
+                    if (e.target.value.trim()) setPasteError('');
+                  }}
+                  rows={8}
+                  placeholder={
+                    isHindi 
+                      ? "उदाहरण के लिए:\nSide Panel\t720\t560\t4\nTop Shelf\t600\t350\t2" 
+                      : "Paste spreadsheet rows here (Ctrl+V / Cmd+V)...\ne.g.\nSide Panel\t720\t560\t4\nTop Shelf\t600\t350\t2"
+                  }
+                  className="w-full text-sm font-mono border-slate-300 rounded-xl shadow-inner focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 p-3.5 h-48 focus:outline-none resize-none transition-all"
+                />
+              </div>
+
+              {/* Error state */}
+              {pasteError && (
+                <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-xl text-xs font-semibold">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{pasteError}</span>
+                </div>
+              )}
+
+              {/* Options */}
+              <div className="flex items-center gap-6 bg-slate-50/50 p-3 rounded-xl border border-slate-100 text-sm">
+                <span className="font-bold text-slate-700 text-xs uppercase tracking-wider">
+                  {isHindi ? 'आयात विकल्प:' : 'Import Option:'}
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                  <input
+                    type="radio"
+                    name="pasteMode"
+                    value="append"
+                    checked={pasteMode === 'append'}
+                    onChange={() => setPasteMode('append')}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>{isHindi ? 'मौजूदा सूची में जोड़ें' : 'Append to current list'}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                  <input
+                    type="radio"
+                    name="pasteMode"
+                    value="replace"
+                    checked={pasteMode === 'replace'}
+                    onChange={() => setPasteMode('replace')}
+                    className="text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span>{isHindi ? 'पूरी सूची बदलें' : 'Replace entire list'}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50 rounded-b-2xl">
+              <button
+                onClick={() => {
+                  setIsPasteModalOpen(false);
+                  setPasteText('');
+                  setPasteError('');
+                }}
+                className="px-5 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors shadow-sm cursor-pointer"
+              >
+                {isHindi ? 'रद्द करें' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => {
+                  const cleanedText = pasteText.trim();
+                  if (!cleanedText) {
+                    setPasteError(isHindi ? 'कृपया पहले डेटा पेस्ट करें!' : 'Please paste some data first!');
+                    return;
+                  }
+                  
+                  const parsed = parsePastedData(cleanedText);
+                  if (parsed.length === 0) {
+                    setPasteError(isHindi ? 'कोई वैध डेटा नहीं मिला। कृपया फॉर्मेट की जांच करें।' : 'No valid parts found. Please check your data format.');
+                    return;
+                  }
+
+                  if (pasteMode === 'replace') {
+                    onChange(parsed);
+                  } else {
+                    onChange([...parts, ...parsed]);
+                  }
+
+                  setIsPasteModalOpen(false);
+                  setPasteText('');
+                  setPasteError('');
+                }}
+                className="px-6 py-2.5 flex items-center gap-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-md shadow-emerald-200 active:scale-95 cursor-pointer"
+              >
+                {isHindi ? 'डेटा इम्पोर्ट करें' : 'Import Parts'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

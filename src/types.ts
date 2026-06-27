@@ -24,6 +24,7 @@ export interface PartInput {
   quantity: number;
   edges: Edges;
   materialId?: string; // Links to a specific stock material ID
+  edgeMaterialId?: string; // Links to a specific edge banding material
 }
 
 export interface StockItem {
@@ -32,6 +33,37 @@ export interface StockItem {
   length: number;
   width: number;
   cost: number;
+  quantity?: number; // Quantity available in stock
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  phone: string; // Worker's phone
+  wage: number; // Daily wage
+  createdAt: number;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  workerId: string;
+  date: string; // YYYY-MM-DD
+  timestamp: number;
+  status: 'P' | 'H' | 'A'; // Present, Half-day, Absent
+  location?: string;
+}
+
+export interface AttendanceSettings {
+  contractorName: string;
+  contractorPhone: string;
+  workers: Worker[];
+  records: AttendanceRecord[];
+}
+
+export interface EdgeBandItem {
+  id: string;
+  name: string;
+  thickness?: number; // Thickness of the edge banding in mm
 }
 
 export interface SheetSettings {
@@ -45,6 +77,7 @@ export interface SheetSettings {
   algorithm: string;
   sheetCost: number; // Cost per sheet
   stockItems?: StockItem[]; // List of available sheet materials in stock
+  edgeBandItems?: EdgeBandItem[]; // List of available edge banding materials
 }
 
 export interface PackedPart {
@@ -61,6 +94,7 @@ export interface PackedPart {
   isRotated: boolean;
   edges: Edges;
   grain: Grain;
+  edgeMaterialId?: string;
 }
 
 export interface SheetLayout {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SheetSettings, StockItem, Language, Unit } from '../types';
+import { SheetSettings, StockItem, Language, Unit, EdgeBandItem } from '../types';
 import { X, Plus, Trash2, Save, Settings, Layers } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -10,6 +10,7 @@ interface SettingsModalProps {
 }
 
 const ALGORITHMS = [
+  { key: 'AutoBest', labelEn: 'Auto Best (AI Multi-Pass)', labelHi: 'ऑटो बेस्ट (AI मल्टी-पास)' },
   { key: 'StripCutColFirst', labelEn: 'Strip-Cut Column-First (Standard)', labelHi: 'स्ट्रिप-कट कॉलम-फर्स्ट (मानक)' },
   { key: 'StripCutRowFirst', labelEn: 'Strip-Cut Row-First (Fast rip)', labelHi: 'स्ट्रिप-कट रो-फर्स्ट (फास्ट रिप)' },
   { key: 'GuillotineBssfSas', labelEn: 'Guillotine BSSF SAS (Table Saw Cut)', labelHi: 'गिलोटीन BSSF SAS (टेबल सॉ कट)' },
@@ -106,6 +107,40 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
     });
   };
 
+  const edgeBandItems = localSettings.edgeBandItems || [];
+
+  const handleAddEdgeBand = () => {
+    setLocalSettings(prev => ({
+      ...prev,
+      edgeBandItems: [
+        ...(prev.edgeBandItems || []),
+        {
+          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+          name: isHindi ? 'नई एज बैंडिंग' : 'New Edge Banding'
+        }
+      ]
+    }));
+  };
+
+  const handleUpdateEdgeBand = (id: string, field: keyof EdgeBandItem, value: any) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      edgeBandItems: (prev.edgeBandItems || []).map(item => {
+        if (item.id === id) {
+          return { ...item, [field]: value };
+        }
+        return item;
+      })
+    }));
+  };
+
+  const handleRemoveEdgeBand = (id: string) => {
+    setLocalSettings(prev => {
+      const updated = (prev.edgeBandItems || []).filter(item => item.id !== id);
+      return { ...prev, edgeBandItems: updated };
+    });
+  };
+
   const handleSave = () => {
     onChange(localSettings);
     onClose();
@@ -150,7 +185,7 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
             <div className="space-y-3">
               {stockItems.map((item, idx) => (
                 <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-slate-50 p-4 rounded-xl border border-slate-200 relative group hover:border-indigo-300 transition-colors">
-                  <div className="md:col-span-4">
+                  <div className="md:col-span-3">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       {isHindi ? 'मटीरियल का नाम (उदा. 18mm)' : 'Material Name (e.g. 18mm)'}
                     </label>
@@ -161,7 +196,7 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
                       className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
                     />
                   </div>
-                  <div className="md:col-span-3">
+                  <div className="md:col-span-2">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       {isHindi ? 'लंबाई' : 'Length'} ({localSettings.unit})
                     </label>
@@ -172,7 +207,7 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
                       className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
-                  <div className="md:col-span-3">
+                  <div className="md:col-span-2">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       {isHindi ? 'चौड़ाई' : 'Width'} ({localSettings.unit})
                     </label>
@@ -180,6 +215,19 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
                       type="number"
                       value={item.width || ''}
                       onChange={(e) => handleUpdateStock(item.id, 'width', parseFloat(e.target.value))}
+                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      {isHindi ? 'मात्रा (Quantity)' : 'Quantity'}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity === undefined ? '' : item.quantity}
+                      onChange={(e) => handleUpdateStock(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                      placeholder="∞ (असीमित)"
                       className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
@@ -202,6 +250,65 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
             >
               <Plus size={18} />
               {isHindi ? 'नया स्टॉक जोड़ें' : 'Add New Stock'}
+            </button>
+          </section>
+
+          <hr className="border-slate-100" />
+
+          {/* Section: Edge Band Materials */}
+          <section>
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Layers size={16} className="text-indigo-500" />
+              {isHindi ? 'एज बैंडिंग (टेप) मटीरियल' : 'Edge Banding Materials'}
+            </h3>
+            
+            <div className="space-y-3">
+              {edgeBandItems.map((item, idx) => (
+                <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-slate-50 p-4 rounded-xl border border-slate-200 relative group hover:border-indigo-300 transition-colors">
+                  <div className="md:col-span-8">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      {isHindi ? 'एज बैंडिंग का नाम (उदा. White)' : 'Edge Band Name (e.g. White)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={item.name}
+                      onChange={(e) => handleUpdateEdgeBand(item.id, 'name', e.target.value)}
+                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                      {isHindi ? 'मोटाई (mm)' : 'Thickness (mm)'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={item.thickness === undefined ? '' : item.thickness}
+                      onChange={(e) => handleUpdateEdgeBand(item.id, 'thickness', parseFloat(e.target.value) || 0)}
+                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
+                      placeholder="e.g. 0.8"
+                    />
+                  </div>
+                  <div className="md:col-span-1 flex justify-end pt-5 md:pt-0">
+                    <button
+                      onClick={() => handleRemoveEdgeBand(item.id)}
+                      className="p-2 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors"
+                      title="Remove"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handleAddEdgeBand}
+              className="mt-4 flex items-center justify-center gap-2 w-full py-3.5 border-2 border-dashed border-indigo-200 text-indigo-600 rounded-xl hover:bg-indigo-50 hover:border-indigo-300 transition-colors font-medium text-sm"
+            >
+              <Plus size={18} />
+              {isHindi ? 'नई एज बैंडिंग जोड़ें' : 'Add New Edge Banding'}
             </button>
           </section>
 

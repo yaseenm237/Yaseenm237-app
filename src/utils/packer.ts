@@ -175,6 +175,7 @@ export function runPacking(
     let overrideL: number | undefined;
     let overrideW: number | undefined;
     let materialName: string | undefined;
+    let stockQtyOverride: number | undefined;
 
     if (matId) {
       const stockItem = settings.stockItems.find(s => s.id === matId);
@@ -182,6 +183,7 @@ export function runPacking(
         overrideL = stockItem.length;
         overrideW = stockItem.width;
         materialName = stockItem.name;
+        stockQtyOverride = stockItem.quantity;
       }
     }
 
@@ -190,7 +192,8 @@ export function runPacking(
       settings,
       overrideL,
       overrideW,
-      materialName
+      materialName,
+      stockQtyOverride
     );
 
     // Merge group results into final result
@@ -230,8 +233,55 @@ export function runPackingSingleMaterial(
   settings: SheetSettings,
   sheetLOverride?: number,
   sheetWOverride?: number,
-  materialNameOverride?: string
+  materialNameOverride?: string,
+  stockQtyOverride?: number
 ): PackingResult {
+  if (settings.algorithm === 'AutoBest') {
+    // Rule 2: Multi-pass Dictionary Ka Intejaam (Core Logic)
+    const nesting_iteration_pool: Record<string, PackingResult> = {};
+    const heuristics = [
+      'StripCutColFirst',
+      'StripCutRowFirst',
+      'GuillotineBssfSas',
+      'GuillotineBssfMaxas',
+      'MaxRectsBssf'
+    ];
+    
+    let bestHeuristic = heuristics[0];
+    let minWaste = Infinity;
+
+    for (let i = 0; i < heuristics.length; i++) {
+      const algo = heuristics[i];
+      const res = runPackingSingleMaterial(
+        partsInput, 
+        { ...settings, algorithm: algo }, 
+        sheetLOverride, 
+        sheetWOverride, 
+        materialNameOverride,
+        stockQtyOverride
+      );
+      
+      // Store in temporary dictionary
+      nesting_iteration_pool[`pheri_${i+1}_${algo}`] = res;
+      
+      // Rule 3: Analysis aur Selection Logic
+      if (res.overallWastePercent < minWaste || 
+         (res.overallWastePercent === minWaste && res.totalSheetsUsed < nesting_iteration_pool[`pheri_${heuristics.indexOf(bestHeuristic)+1}_${bestHeuristic}`].totalSheetsUsed)) {
+        minWaste = res.overallWastePercent;
+        bestHeuristic = algo;
+      }
+    }
+    
+    const bestResult = nesting_iteration_pool[`pheri_${heuristics.indexOf(bestHeuristic)+1}_${bestHeuristic}`];
+    
+    // Rule 4: Hath ke Hath Kachra Clean-up (Garbage Collection)
+    for (const key in nesting_iteration_pool) {
+      delete nesting_iteration_pool[key];
+    }
+    
+    return bestResult;
+  }
+
   const unit = settings.unit;
   const edgeTh = settings.edgeTh;
   const K = settings.bladeTh; // Kerf in mm
@@ -266,8 +316,16 @@ export function runPackingSingleMaterial(
     // Edge banding reduces the wooden cutting size:
     // T and B reduce the length dimension
     // L and R reduce the width dimension
-    const dL = (Number(hasT) + Number(hasB)) * edgeTh;
-    const dW = (Number(hasL) + Number(hasR)) * edgeTh;
+    let currentEdgeTh = edgeTh;
+    if (part.edgeMaterialId && settings.edgeBandItems) {
+      const edgeBand = settings.edgeBandItems.find(e => e.id === part.edgeMaterialId);
+      if (edgeBand && edgeBand.thickness !== undefined) {
+        currentEdgeTh = edgeBand.thickness;
+      }
+    }
+
+    const dL = (Number(hasT) + Number(hasB)) * currentEdgeTh;
+    const dW = (Number(hasL) + Number(hasR)) * currentEdgeTh;
 
     const cutL = Math.max(1.0, lMm - dL);
     const cutW = Math.max(1.0, wMm - dW);
@@ -306,7 +364,7 @@ export function runPackingSingleMaterial(
 
   const layouts: SheetLayout[] = [];
   const unplacedPartsMap = new Map<string, { name: string; qty: number }>();
-  const totalStockSheets = settings.stock;
+  const totalStockSheets = stockQtyOverride !== undefined ? stockQtyOverride : 9999;
 
   // Initialize unplaced parts helper
   for (const p of flatParts) {

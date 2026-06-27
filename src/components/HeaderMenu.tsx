@@ -8,7 +8,8 @@ import {
   Redo2, 
   Languages,
   Upload,
-  ChevronRight
+  ChevronRight,
+  Users
 } from 'lucide-react';
 import { Language } from '../types';
 
@@ -17,6 +18,7 @@ interface HeaderMenuProps {
   onOpenSavedFiles: () => void;
   onOpenCalc: () => void;
   onOpenExport: () => void;
+  onOpenAttendance: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -30,6 +32,7 @@ export default function HeaderMenu({
   onOpenSavedFiles,
   onOpenCalc,
   onOpenExport,
+  onOpenAttendance,
   canUndo,
   canRedo,
   onUndo,
@@ -108,6 +111,19 @@ export default function HeaderMenu({
                   <Rocket size={16} />
                 </div>
                 <span className="text-sm font-semibold">{isHindi ? 'एक्सपोर्ट सेंटर' : 'Export Center'}</span>
+              </div>
+              <ChevronRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
+            </button>
+
+            <button
+              onClick={() => { onOpenAttendance(); closeMenu(); }}
+              className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-slate-50 text-slate-700 hover:text-indigo-600 group transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-500 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
+                  <Users size={16} />
+                </div>
+                <span className="text-sm font-semibold">{isHindi ? 'हाजिरी (Attendance)' : 'Attendance'}</span>
               </div>
               <ChevronRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
             </button>

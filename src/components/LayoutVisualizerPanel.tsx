@@ -1015,7 +1015,7 @@ export default function LayoutVisualizerPanel({
                         x={pad + T + 4} 
                         y={pad + T - 4} 
                         fill="#64748b" 
-                        fontSize="9" 
+                        fontSize="24" 
                         fontWeight="semibold"
                       >
                         {isHindi ? `ट्रिम सीमा (${T}mm)` : `Trim border (${T}mm)`}
@@ -1053,7 +1053,7 @@ export default function LayoutVisualizerPanel({
                                 textAnchor="middle" 
                                 dominantBaseline="middle"
                                 fill="#94a3b8" 
-                                fontSize="8" 
+                                fontSize="22" 
                                 fontWeight="bold"
                                 className="select-none pointer-events-none"
                               >
@@ -1065,7 +1065,7 @@ export default function LayoutVisualizerPanel({
                                 textAnchor="middle" 
                                 dominantBaseline="middle"
                                 fill="#64748b" 
-                                fontSize="8" 
+                                fontSize="22" 
                                 fontWeight="semibold"
                                 className="select-none pointer-events-none"
                               >
@@ -1079,7 +1079,7 @@ export default function LayoutVisualizerPanel({
                               textAnchor="middle" 
                               dominantBaseline="middle"
                               fill="#64748b" 
-                              fontSize="7" 
+                              fontSize="20" 
                               fontWeight="bold"
                               className="select-none pointer-events-none"
                             >
@@ -1249,7 +1249,7 @@ export default function LayoutVisualizerPanel({
                                 textAnchor="middle" 
                                 dominantBaseline="middle"
                                 fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
-                                fontSize="8" 
+                                fontSize="22" 
                                 fontWeight="bold"
                                 className="select-none pointer-events-none"
                               >
@@ -1303,7 +1303,7 @@ export default function LayoutVisualizerPanel({
                             return (
                               <g key={`seq-${p.id}`}>
                                 <circle cx={cx} cy={cy} r="8" fill="#e11d48" stroke="#ffffff" strokeWidth="1.5" />
-                                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="9" fontWeight="bold">
+                                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="24" fontWeight="bold">
                                   {i + 1}
                                 </text>
                               </g>
@@ -1562,12 +1562,26 @@ export default function LayoutVisualizerPanel({
                   {(() => {
                     const globalGroup = new Map<string, any>();
                     layouts.forEach(layout => {
+                      const materialName = layout.stockItem?.name || 'Standard';
                       layout.parts.forEach(p => {
-                        const key = `${p.name}_${p.origL}_${p.origW}`;
+                        const edgesSummary = getEdgeBandingSummary(p.edges, isHindi);
+                        const edgeTape = p.edgeMaterialId 
+                          ? (settings.edgeBandItems?.find(e => e.id === p.edgeMaterialId)?.name || 'Default Tape')
+                          : 'Default Tape';
+                        
+                        const key = `${p.name}_${p.origL}_${p.origW}_${materialName}_${edgesSummary}_${edgeTape}`;
                         if (globalGroup.has(key)) {
                           globalGroup.get(key)!.qty += 1;
                         } else {
-                          globalGroup.set(key, { name: p.name, l: p.origL, w: p.origW, qty: 1 });
+                          globalGroup.set(key, { 
+                            name: p.name, 
+                            l: p.origL, 
+                            w: p.origW, 
+                            qty: 1,
+                            material: materialName,
+                            edges: edgesSummary,
+                            edgeTape: edgeTape
+                          });
                         }
                       });
                     });
@@ -1580,10 +1594,18 @@ export default function LayoutVisualizerPanel({
                       return (
                         <tr key={idx} className="hover:bg-indigo-800/20">
                           <td className="py-3 px-4">
-                            <div className="font-semibold">{p.name}</div>
-                            <div className="text-xs text-indigo-300 font-mono">{p.l.toFixed(1)} x {p.w.toFixed(1)} {settings.unit}</div>
+                            <div className="font-semibold text-lg">{p.name}</div>
+                            <div className="text-sm text-indigo-300 font-mono mt-1">{p.l.toFixed(1)} x {p.w.toFixed(1)} {settings.unit}</div>
+                            <div className="flex flex-col gap-0.5 mt-2 text-xs text-indigo-200">
+                              <div><span className="opacity-60">{isHindi ? 'बोर्ड मटीरियल:' : 'Board Material:'}</span> {p.material}</div>
+                              {p.edges !== '-' && p.edges !== 'कोई नहीं' && p.edges !== 'None' && (
+                                <div>
+                                  <span className="opacity-60">{isHindi ? 'एज बैंडिंग:' : 'Edge Banding:'}</span> {p.edges} ({p.edgeTape})
+                                </div>
+                              )}
+                            </div>
                           </td>
-                          <td className="py-3 px-4 text-center font-bold text-lg text-emerald-300">
+                          <td className="py-3 px-4 text-center align-middle font-black text-2xl text-emerald-300">
                             {p.qty}
                           </td>
                         </tr>
@@ -1593,7 +1615,7 @@ export default function LayoutVisualizerPanel({
                         <td className="py-4 px-4 text-right">
                           {isHindi ? 'कुल पीसेस (Total Pieces) :' : 'Total Pieces :'}
                         </td>
-                        <td className="py-4 px-4 text-center text-emerald-400">
+                        <td className="py-4 px-4 text-center text-emerald-400 font-black text-2xl">
                           {grandTotalQty}
                         </td>
                       </tr>

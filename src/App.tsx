@@ -15,9 +15,11 @@ import EstimateCalculatorModal from './components/EstimateCalculatorModal';
 import SavedFilesModal, { SavedJob } from './components/SavedFilesModal';
 import ToastContainer, { ToastMessage } from './components/Toast';
 import HeaderMenu from './components/HeaderMenu';
+import CabinetDesignerModal from './components/CabinetDesignerModal';
+import AttendanceModal from './components/AttendanceModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
-import { Material } from './types';
+import { Material, AttendanceSettings, AttendanceRecord } from './types';
 import { 
   Languages, 
   HelpCircle, 
@@ -153,8 +155,17 @@ const DEFAULT_SETTINGS: SheetSettings = {
   trimMargin: 10.0, // standard trim margin (10mm)
   edgeTh: 2.0, // standard edge banding (2mm)
   stock: 5,
-  algorithm: 'StripCutRowFirst',
-  sheetCost: 45.0
+  algorithm: 'AutoBest',
+  sheetCost: 45.0,
+  stockItems: [
+    { id: 'mat-plywood', name: '18mm Plywood (प्लाईवुड)', length: 96.0, width: 48.0, cost: 45.0 },
+    { id: 'mat-mdf', name: '18mm MDF (एमडीएफ)', length: 96.0, width: 48.0, cost: 35.0 },
+    { id: 'mat-melamine', name: '18mm Melamine (मेलामाइन्)', length: 96.0, width: 48.0, cost: 40.0 }
+  ],
+  edgeBandItems: [
+    { id: 'edge-white', name: 'White 0.8mm Edge Band', thickness: 0.8 },
+    { id: 'edge-wood', name: 'Woodgrain 2mm Edge Band', thickness: 2.0 }
+  ]
 };
 
 const INITIAL_PARTS: PartInput[] = [
@@ -166,7 +177,8 @@ const INITIAL_PARTS: PartInput[] = [
     grain: 'L',
     allowRot: false,
     quantity: 2,
-    edges: { T: true, B: true, L: true, R: false }
+    edges: { T: true, B: true, L: true, R: false },
+    materialId: 'mat-plywood'
   },
   {
     id: '2',
@@ -176,7 +188,8 @@ const INITIAL_PARTS: PartInput[] = [
     grain: 'L',
     allowRot: true,
     quantity: 4,
-    edges: { T: true, B: false, L: false, R: false }
+    edges: { T: true, B: false, L: false, R: false },
+    materialId: 'mat-mdf'
   },
   {
     id: '3',
@@ -186,12 +199,18 @@ const INITIAL_PARTS: PartInput[] = [
     grain: 'W',
     allowRot: false,
     quantity: 3,
-    edges: { T: true, B: true, L: true, R: true }
+    edges: { T: true, B: true, L: true, R: true },
+    materialId: 'mat-melamine'
   }
 ];
 
 const getInitialParts = (): PartInput[] => {
   try {
+    const session = window.sessionStorage.getItem('carpentry_workspace_session');
+    if (session) {
+      const parsed = JSON.parse(session);
+      if (parsed.parts) return parsed.parts;
+    }
     const item = window.localStorage.getItem('carpentry_parts');
     return item ? JSON.parse(item) : INITIAL_PARTS;
   } catch {
@@ -201,15 +220,21 @@ const getInitialParts = (): PartInput[] => {
 
 const getInitialSettings = (): SheetSettings => {
   try {
-    const item = window.localStorage.getItem('carpentry_settings');
-    if (item) {
-      const parsed = JSON.parse(item);
-      return {
-        ...DEFAULT_SETTINGS,
-        ...parsed
-      };
+    const session = window.sessionStorage.getItem('carpentry_workspace_session');
+    let loadedSettings = DEFAULT_SETTINGS;
+    if (session) {
+      const parsed = JSON.parse(session);
+      if (parsed.settings) loadedSettings = { ...DEFAULT_SETTINGS, ...parsed.settings };
+    } else {
+      const item = window.localStorage.getItem('carpentry_settings');
+      if (item) {
+        loadedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(item) };
+      }
     }
-    return DEFAULT_SETTINGS;
+    if (!loadedSettings.stockItems || loadedSettings.stockItems.length === 0) {
+      loadedSettings.stockItems = [ ...DEFAULT_SETTINGS.stockItems! ];
+    }
+    return loadedSettings;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -217,6 +242,13 @@ const getInitialSettings = (): SheetSettings => {
 
 export default function App() {
   const [language, setLanguage] = useLocalStorage<Language>('carpentry_language', 'English');
+  const [attendanceData, setAttendanceData] = useLocalStorage<AttendanceSettings>('carpentry_attendance', {
+    contractorName: '',
+    contractorPhone: '',
+    workers: [],
+    records: []
+  });
+  const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   
   // Single-source design history state
   const {
@@ -254,16 +286,56 @@ export default function App() {
     });
   };
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  // Synchronize state with LocalStorage
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const workerAuth = params.get('workerAuth');
+    const recordAttendance = params.get('recordAttendance');
+    
+    if (recordAttendance) {
+      try {
+        const payload = JSON.parse(atob(recordAttendance));
+        if (payload.w && payload.s && payload.d) {
+          const newRecord: AttendanceRecord = {
+            id: `r-${Date.now()}`,
+            workerId: payload.w,
+            status: payload.s,
+            date: payload.d,
+            timestamp: payload.t || Date.now()
+          };
+          setAttendanceData(prev => ({
+            ...prev,
+            records: [...(prev.records || []), newRecord]
+          }));
+          alert(language === 'Hindi' ? 'हाजिरी सफलतापूर्वक दर्ज की गई!' : 'Attendance recorded successfully!');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setIsAttendanceOpen(true);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [setAttendanceData, language]);
+
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isCabinetDesignerOpen, setIsCabinetDesignerOpen] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<'saving' | 'saved' | 'idle'>('idle');
+
+  // Synchronize state with LocalStorage and SessionStorage (Autosave Indicator)
+  useEffect(() => {
+    setAutosaveStatus('saving');
     try {
       window.localStorage.setItem('carpentry_parts', JSON.stringify(parts));
       window.localStorage.setItem('carpentry_settings', JSON.stringify(settings));
+      window.sessionStorage.setItem('carpentry_workspace_session', JSON.stringify({ parts, settings }));
     } catch (error) {
-      console.warn("Failed to persist carpentry states to localStorage:", error);
+      console.warn("Failed to persist carpentry states:", error);
     }
+
+    const timer = setTimeout(() => {
+      setAutosaveStatus('saved');
+    }, 600);
+
+    return () => clearTimeout(timer);
   }, [parts, settings]);
 
   const [result, setResult] = useState<PackingResult>({
@@ -570,11 +642,37 @@ export default function App() {
 
         {/* Global Controls */}
         <div className="flex items-center gap-3">
+          {/* Autosave Status Indicator */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-500 font-semibold select-none shadow-sm">
+            {autosaveStatus === 'saving' ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित हो रहा है...' : 'Saving...'}</span>
+              </>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित' : 'Autosaved'}</span>
+              </>
+            )}
+          </div>
+
+          {/* 2D Almirah Designer Button */}
+          <button
+            onClick={() => setIsCabinetDesignerOpen(true)}
+            className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+            title={isHindi ? "2D अलमारी डिज़ाइनर खोलें" : "Open 2D Almirah Designer"}
+          >
+            <Hammer size={14} />
+            <span className="hidden sm:inline">{isHindi ? "2D अलमारी" : "2D Almirah"}</span>
+          </button>
+
           <HeaderMenu 
             language={language}
             onOpenSavedFiles={() => setIsSavedFilesOpen(true)}
             onOpenCalc={() => setIsCalcOpen(true)}
             onOpenExport={() => setIsExportOpen(true)}
+            onOpenAttendance={() => setIsAttendanceOpen(true)}
             canUndo={canUndo}
             canRedo={canRedo}
             onUndo={handleUndo}
@@ -584,6 +682,14 @@ export default function App() {
           />
         </div>
       </header>
+
+      <AttendanceModal
+        isOpen={isAttendanceOpen}
+        onClose={() => setIsAttendanceOpen(false)}
+        language={language}
+        attendanceData={attendanceData}
+        onUpdateData={setAttendanceData}
+      />
 
       {/* Main Grid Workspace - Bento Grid Layout */}
       <main id="main-grid" className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-7xl mx-auto w-full">
@@ -639,6 +745,7 @@ export default function App() {
               translations={t}
               unit={settings.unit}
               settings={settings}
+              onOpenCabinetDesigner={() => setIsCabinetDesignerOpen(true)}
             />
           </section>
 
@@ -794,6 +901,24 @@ export default function App() {
           language={language}
         />
       )}
+
+      {/* 2D Cabinet Designer Modal */}
+      <CabinetDesignerModal
+        isOpen={isCabinetDesignerOpen}
+        onClose={() => setIsCabinetDesignerOpen(false)}
+        language={language}
+        unit={settings.unit}
+        settings={settings}
+        onAddParts={(newParts) => {
+          setParts(prev => [...prev, ...newParts]);
+          addToast(
+            isHindi 
+              ? 'अलमारी के सभी पुर्जे कटिंग लिस्ट में सफलतापूर्वक जोड़ दिए गए हैं!' 
+              : 'Cabinet panel pieces added to cutting list successfully!', 
+            'success'
+          );
+        }}
+      />
 
       {/* Saved Files Modal */}
       <SavedFilesModal
