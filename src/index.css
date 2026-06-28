@@ -13,6 +13,109 @@ body {
   color: #1e293b;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* HIGH-FIDELITY DARK MODE OVERRIDES */
+html.dark body {
+  background-color: #030712 !important; /* Tailwind Slate-950 */
+  color: #f1f5f9 !important;
+}
+
+html.dark #app-container {
+  background-color: #030712 !important;
+}
+
+/* Style cards, panels, headers, modas etc in dark mode */
+html.dark .bg-white,
+html.dark #sidebar-settings > div,
+html.dark #cutting-list-panel,
+html.dark #compare-panel,
+html.dark .layout-card,
+html.dark .bg-white\/80 {
+  background-color: #0f172a !important; /* Slate-900 */
+  border-color: #1e293b !important; /* Slate-800 */
+  color: #f1f5f9 !important;
+}
+
+html.dark .bg-slate-50,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/80 {
+  background-color: #020617 !important; /* Slate-950/deep */
+}
+
+html.dark .border-slate-200,
+html.dark .border-slate-200\/80,
+html.dark .border-slate-100,
+html.dark .border-b,
+html.dark .border-t,
+html.dark .border {
+  border-color: #1e293b !important;
+}
+
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #f1f5f9 !important;
+}
+
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Interactive elements in dark mode */
+html.dark input,
+html.dark select,
+html.dark textarea,
+html.dark .bg-slate-50 input,
+html.dark .bg-slate-50 select {
+  background-color: #030712 !important;
+  color: #f1f5f9 !important;
+  border-color: #1e293b !important;
+}
+
+html.dark input:focus,
+html.dark select:focus {
+  border-color: #6366f1 !important; /* Indigo-500 */
+  outline: none;
+}
+
+html.dark th,
+html.dark table th {
+  background-color: #020617 !important;
+  color: #94a3b8 !important;
+  border-color: #1e293b !important;
+}
+
+html.dark td,
+html.dark table td {
+  border-color: #1e293b !important;
+}
+
+html.dark tr:hover,
+html.dark tbody tr:hover {
+  background-color: #1e293b/40 !important;
+}
+
+/* Floating overlays & drop-downs */
+html.dark .absolute.right-0.top-full {
+  background-color: #0f172a !important;
+  border-color: #1e293b !important;
+}
+
+html.dark .absolute.right-0.top-full button:hover,
+html.dark .absolute.right-0.top-full label:hover {
+  background-color: #1e293b !important;
+}
+
+html.dark .p-3.border-b.border-slate-100.bg-slate-50\/80 {
+  background-color: #020617 !important;
+  border-color: #1e293b !important;
 }
 
 /* Custom micro-animations */

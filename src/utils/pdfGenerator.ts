@@ -4,9 +4,6 @@
  */
 
 import { jsPDF } from 'jspdf';
-import { Filesystem, Directory } from '@capacitor/filesystem';
-import { FileOpener } from '@capacitor-community/file-opener';
-import { Capacitor } from '@capacitor/core';
 import { PartInput, SheetSettings, PackingResult, PackedPart, SheetLayout } from '../types';
 import { convertToMm, convertMmToUnit } from './packer';
 
@@ -55,9 +52,8 @@ function formatDim(valueMm: number, unit: 'Inch' | 'CM' | 'MM'): string {
 
 /**
  * Generates and downloads a complete, highly-polished workshop blueprint PDF.
- * Updated to support mobile APK via Capacitor Filesystem and FileOpener.
  */
-export async function generatePdfReport(
+export function generatePdfReport(
   parts: PartInput[],
   settings: SheetSettings,
   result: PackingResult,
@@ -431,7 +427,7 @@ export async function generatePdfReport(
       });
       
       // Clean ASCII dash list instead of unicode checkmarks which render as quotes
-      doc.text(`* ${offcutStrings.join('    |    ')}`, margin + 2, sy);
+      doc.text(`*  ${offcutStrings.join('    |    ')}`, margin + 2, sy);
     } else {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
@@ -685,32 +681,6 @@ export async function generatePdfReport(
     }
   });
 
-  // --- 📱 MOBILE APK + WEB HYBRID SAVE LOGIC ---
-  const fileName = `smart_carpentry_layout_${settings.algorithm}_${Date.now()}.pdf`;
-
-  if (Capacitor.isNativePlatform()) {
-    try {
-      // jsPDF से raw base64 डेटा निकालें
-      const pdfBase64 = doc.output('base64'); 
-
-      // 1. फाइल को फोन के Documents फोल्डर में सेव करें
-      const savedFile = await Filesystem.writeFile({
-        path: fileName,
-        data: pdfBase64,
-        directory: Directory.Documents,
-      });
-
-      // 2. फोन के इन-बिल्ट PDF Viewer में फाइल को तुरंत ओपन करें
-      await FileOpener.open({
-        filePath: savedFile.uri,
-        contentType: 'application/pdf'
-      });
-
-    } catch (error: any) {
-      alert(isHindi ? "PDF ओपन करने में दिक्कत आई: " + error.message : "Error opening PDF: " + error.message);
-    }
-  } else {
-    // 💻 अगर कंप्यूटर ब्राउज़र में चल रहा है तो पुराना तरीका
-    doc.save(fileName);
-  }
+  // Save the generated document
+  doc.save(`smart_carpentry_layout_${settings.algorithm}.pdf`);
 }

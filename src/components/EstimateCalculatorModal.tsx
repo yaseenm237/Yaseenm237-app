@@ -118,30 +118,58 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
 
   // Copy beautiful WhatsApp report to clipboard
   const handleCopyWhatsApp = () => {
-    let text = `*📐 Sahira Interior - एस्टीमेट बिल 📐*\n\n`;
-    text += `*दिनांक (Date):* ${new Date().toLocaleDateString()}\n`;
-    text += `-------------------------------------------\n`;
-    
-    let count = 0;
-    items.forEach((item) => {
-      if (!item.name && !item.length && !item.width) return;
-      count++;
-      const calc = calculateItem(item);
-      text += `*${count}. ${item.name || (isHindi ? 'प्लाईवुड पार्ट' : 'Plywood Part')}*\n`;
-      text += `   आकार: ${item.length} x ${item.width} cm | मात्रा: ${item.qty} नग\n`;
-      text += `   क्षेत्रफल: ${calc.sqft.toFixed(2)} SqFt | रेट: ₹${item.rate}/SqFt\n`;
-      text += `   *कीमत: ₹${calc.cost.toFixed(2)}*\n\n`;
-    });
+    let text = "";
+    if (isHindi) {
+      text = `*📐 Sahira Interior - एस्टीमेट बिल 📐*\n\n`;
+      text += `*दिनांक (Date):* ${new Date().toLocaleDateString()}\n`;
+      text += `-------------------------------------------\n`;
+      
+      let count = 0;
+      items.forEach((item) => {
+        if (!item.name && !item.length && !item.width) return;
+        count++;
+        const calc = calculateItem(item);
+        text += `*${count}. ${item.name || 'प्लाईवुड पार्ट'}*\n`;
+        text += `   आकार: ${item.length} x ${item.width} cm | मात्रा: ${item.qty} नग\n`;
+        text += `   क्षेत्रफल: ${calc.sqft.toFixed(2)} SqFt | रेट: ₹${item.rate}/SqFt\n`;
+        text += `   *कीमत: ₹${calc.cost.toFixed(2)}*\n\n`;
+      });
 
-    if (count === 0) {
-      alert(isHindi ? 'कृपया पहले कुछ डेटा दर्ज करें!' : 'Please enter some data first!');
-      return;
+      if (count === 0) {
+        alert('कृपया पहले कुछ डेटा दर्ज करें!');
+        return;
+      }
+
+      text += `-------------------------------------------\n`;
+      text += `*कुल क्षेत्रफल (Total Area):* ${totalSqft.toFixed(2)} Sq.Ft\n`;
+      text += `*कुल फाइनल बिल (Total Bill):* *₹${totalCost.toFixed(2)}*\n\n`;
+      text += `_साहिरा इंटीरियर - स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र_`;
+    } else {
+      text = `*📐 Sahira Interior - Estimate Bill 📐*\n\n`;
+      text += `*Date:* ${new Date().toLocaleDateString()}\n`;
+      text += `-------------------------------------------\n`;
+      
+      let count = 0;
+      items.forEach((item) => {
+        if (!item.name && !item.length && !item.width) return;
+        count++;
+        const calc = calculateItem(item);
+        text += `*${count}. ${item.name || 'Plywood Part'}*\n`;
+        text += `   Size: ${item.length} x ${item.width} cm | Qty: ${item.qty} pcs\n`;
+        text += `   Area: ${calc.sqft.toFixed(2)} SqFt | Rate: ₹${item.rate}/SqFt\n`;
+        text += `   *Price: ₹${calc.cost.toFixed(2)}*\n\n`;
+      });
+
+      if (count === 0) {
+        alert('Please enter some data first!');
+        return;
+      }
+
+      text += `-------------------------------------------\n`;
+      text += `*Total Area:* ${totalSqft.toFixed(2)} Sq.Ft\n`;
+      text += `*Grand Total:* *₹${totalCost.toFixed(2)}*\n\n`;
+      text += `_Sahira Interior - Smart Carpentry Optimizer_`;
     }
-
-    text += `-------------------------------------------\n`;
-    text += `*कुल क्षेत्रफल (Total Area):* ${totalSqft.toFixed(2)} Sq.Ft\n`;
-    text += `*कुल फाइनल बिल (Total Bill):* *₹${totalCost.toFixed(2)}*\n\n`;
-    text += `_साहिरा इंटीरियर - स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र_`;
 
     try {
       navigator.clipboard.writeText(text);

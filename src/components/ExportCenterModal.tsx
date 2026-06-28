@@ -23,6 +23,7 @@ interface ExportCenterModalProps {
   onExportCsv: () => void;
   onExportJson: () => void;
   onPrint: () => void;
+  onOpenReportPreview: () => void;
   isHindi: boolean;
   translations: any;
   partsCount: number;
@@ -36,6 +37,7 @@ export default function ExportCenterModal({
   onExportCsv,
   onExportJson,
   onPrint,
+  onOpenReportPreview,
   isHindi,
   translations,
   partsCount,
@@ -161,7 +163,7 @@ export default function ExportCenterModal({
 
                   <button
                     onClick={() => {
-                      onPrint();
+                      onOpenReportPreview();
                       onClose();
                     }}
                     disabled={partsCount === 0}
@@ -171,7 +173,7 @@ export default function ExportCenterModal({
                         : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 group-hover:scale-[1.02] active:scale-[0.98]'
                     }`}
                   >
-                    <span>{isHindi ? "प्रिंट / PDF खोलें" : "Print / PDF Report"}</span>
+                    <span>{isHindi ? "ब्लूप्रिंट रिपोर्ट खोलें (View)" : "Open Blueprint Report"}</span>
                     <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>

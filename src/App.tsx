@@ -3,9 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { FileOpener } from '@capacitor-community/file-opener';
-import { Capacitor } from '@capacitor/core';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Language, Unit, PartInput, SheetSettings, PackingResult, AlgoComparison } from './types';
 import { runPacking, compareAlgorithms, convertMmToUnit, convertToMm } from './utils/packer';
@@ -14,12 +11,14 @@ import SettingsModal from './components/SettingsModal';
 import CuttingListPanel from './components/CuttingListPanel';
 import LayoutVisualizerPanel from './components/LayoutVisualizerPanel';
 import ExportCenterModal from './components/ExportCenterModal';
+import ReportPreviewModal from './components/ReportPreviewModal';
 import EstimateCalculatorModal from './components/EstimateCalculatorModal';
 import SavedFilesModal, { SavedJob } from './components/SavedFilesModal';
 import ToastContainer, { ToastMessage } from './components/Toast';
 import HeaderMenu from './components/HeaderMenu';
 import CabinetDesignerModal from './components/CabinetDesignerModal';
 import AttendanceModal from './components/AttendanceModal';
+import AboutModal from './components/AboutModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
 import { Material, AttendanceSettings, AttendanceRecord } from './types';
@@ -38,7 +37,10 @@ import {
   Redo2,
   Settings,
   Calculator,
-  Folder
+  Folder,
+  Sun,
+  Moon,
+  Info
 } from 'lucide-react';
 
 const TRANSLATIONS = {
@@ -245,6 +247,21 @@ const getInitialSettings = (): SheetSettings => {
 
 export default function App() {
   const [language, setLanguage] = useLocalStorage<Language>('carpentry_language', 'English');
+  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>('carpentry_theme', 'light');
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
+  
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
   const [attendanceData, setAttendanceData] = useLocalStorage<AttendanceSettings>('carpentry_attendance', {
     contractorName: '',
     contractorPhone: '',
@@ -353,12 +370,45 @@ export default function App() {
   const [compareResults, setCompareResults] = useState<AlgoComparison[] | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isReportPreviewOpen, setIsReportPreviewOpen] = useState<boolean>(false);
   const [isCalcOpen, setIsCalcOpen] = useState<boolean>(false);
   const [isSavedFilesOpen, setIsSavedFilesOpen] = useState<boolean>(false);
   const [savedJobs, setSavedJobs] = useLocalStorage<SavedJob[]>('carpentry_saved_jobs', []);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isFirstMount = useRef(true);
   const skipAutosaveToast = useRef(false);
+
+  // Lock body scroll when any modal is open to prevent touch scroll leakage to the background panel
+  useEffect(() => {
+    const isAnyModalOpen = 
+      isExportOpen || 
+      isReportPreviewOpen || 
+      isCalcOpen || 
+      isSavedFilesOpen || 
+      isAboutOpen || 
+      isAttendanceOpen || 
+      isSettingsOpen || 
+      isCabinetDesignerOpen;
+
+    if (isAnyModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [
+    isExportOpen, 
+    isReportPreviewOpen, 
+    isCalcOpen, 
+    isSavedFilesOpen, 
+    isAboutOpen, 
+    isAttendanceOpen, 
+    isSettingsOpen, 
+    isCabinetDesignerOpen
+  ]);
 
   const t = TRANSLATIONS[language];
   const isHindi = language === 'Hindi';
@@ -486,9 +536,12 @@ export default function App() {
     setCompareResults(null);
   };
 
-  // CSV Export trigger (Web + Mobile Dono ke liye)
-  const handleExportCsv = async () => {
-    let csvRawContent = "Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)\n";
+  // CSV Export trigger
+  const handleExportCsv = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)\n";
+
+    const lines: string[] = ["Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)"];
 
     parts.forEach(p => {
       if (p.quantity <= 0) return;
@@ -497,67 +550,62 @@ export default function App() {
         .map(([name, _]) => name)
         .join('');
       
-      csvRawContent += `"${p.name || 'Unnamed'}",${p.length},${p.width},${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"\n`;
+      const line = `"${p.name || 'Unnamed'}",${p.length},${p.width},${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"`;
+      csvContent += line + "\n";
+      lines.push(line);
     });
 
-    const fileName = `cutting_list_${settings.algorithm}_${Date.now()}.csv`;
-
-    // 📱 अगर APK (Mobile) में चल रहा है
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await Filesystem.writeFile({
-          path: fileName,
-          data: csvRawContent,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8,
-        });
-        alert(isHindi ? "CSV फ़ाइल आपके 'Documents' फ़ोल्डर में सेव हो गई है!" : "CSV File successfully saved to Documents!");
-      } catch (err: any) {
-        alert("Storage Error: " + err.message);
-      }
-    } else {
-      // 💻 अगर कंप्यूटर ब्राउज़र में चल रहा है
-      const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvRawContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    try {
+      navigator.clipboard.writeText(lines.join("\n"));
+      addToast(
+        isHindi 
+          ? "सीएसवी डेटा आपके क्लिपबोर्ड पर कॉपी और डाउनलोड हो गया है!" 
+          : "CSV Data copied to clipboard & downloaded successfully!", 
+        "success"
+      );
+    } catch (e) {
+      console.error(e);
     }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `cutting_list_${settings.algorithm}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     
     saveJobToStorageAndReset();
   };
 
-  // JSON Export trigger (Web + Mobile Dono ke liye)
-  const handleExportJson = async () => {
-    const configData = { settings, parts };
+  // JSON Export trigger
+  const handleExportJson = () => {
+    const configData = {
+      settings,
+      parts
+    };
     const jsonStr = JSON.stringify(configData, null, 2);
-    const fileName = `carpentry_optimizer_config_${Date.now()}.json`;
-
-    // 📱 अगर APK में चल रहा है
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await Filesystem.writeFile({
-          path: fileName,
-          data: jsonStr,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8,
-        });
-        alert(isHindi ? "JSON बैकअप फ़ाइल 'Documents' में सेव हो गई है!" : "JSON Backup saved to Documents!");
-      } catch (err: any) {
-        alert("Storage Error: " + err.message);
-      }
-    } else {
-      // 💻 अगर कंप्यूटर ब्राउज़र में चल रहा है
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
-      const link = document.createElement("a");
-      link.setAttribute("href", dataUri);
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    
+    try {
+      navigator.clipboard.writeText(jsonStr);
+      addToast(
+        isHindi 
+          ? "कॉन्फ़िगरेशन JSON आपके क्लिपबोर्ड पर कॉपी और डाउनलोड हो गया है!" 
+          : "Configuration JSON copied to clipboard & downloaded successfully!", 
+        "success"
+      );
+    } catch (e) {
+      console.error(e);
     }
+
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
+
+    const link = document.createElement("a");
+    link.setAttribute("href", dataUri);
+    link.setAttribute("download", `carpentry_optimizer_config.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     
     saveJobToStorageAndReset();
   };
@@ -621,7 +669,7 @@ export default function App() {
   const winner = getWinnerAlgo();
 
   return (
-    <div id="app-container" className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div id="app-container" className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col font-sans transition-colors duration-250">
       
       {/* Printable Report Header (Hidden in UI, Visible in standard browser print) */}
       <div id="print-header" className="p-8">
@@ -660,33 +708,33 @@ export default function App() {
       </div>
 
       {/* Screen View Header */}
-      <header id="header-bar" className="bg-white/80 backdrop-blur-xl sticky top-0 z-40 text-slate-800 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.1)] border-b border-slate-200/60 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
+      <header id="header-bar" className="bg-white/80 dark:bg-slate-900/85 backdrop-blur-xl sticky top-0 z-40 text-slate-800 dark:text-slate-100 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.1)] border-b border-slate-200/60 dark:border-slate-800 px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full overflow-hidden shadow-md shadow-indigo-600/20 border-2 border-indigo-100 flex items-center justify-center bg-white shrink-0">
+          <div className="w-12 h-12 rounded-full overflow-hidden shadow-md shadow-indigo-600/20 border-2 border-indigo-100 dark:border-slate-800 flex items-center justify-center bg-white shrink-0">
             <img src="/src/assets/images/shahirah_logo_1782493245476.jpg" alt="Sahirah Logo" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight flex items-center gap-2 text-slate-900">
+            <h1 className="text-xl font-extrabold tracking-tight flex items-center gap-2 text-slate-900 dark:text-white">
               {t.title}
-              <span className="text-[9px] font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-full px-2 py-0.5 tracking-widest uppercase shrink-0">PRO</span>
+              <span className="text-[9px] font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 dark:bg-indigo-950 dark:border-indigo-800 dark:text-indigo-400 rounded-full px-2 py-0.5 tracking-widest uppercase shrink-0">PRO</span>
             </h1>
-            <p className="text-xs text-slate-500 font-medium">{t.subtitle}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{t.subtitle}</p>
           </div>
         </div>
 
         {/* Global Controls */}
         <div className="flex items-center gap-3">
           {/* Autosave Status Indicator */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-500 font-semibold select-none shadow-sm">
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950/45 border border-slate-200 dark:border-slate-850 rounded-xl px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 font-semibold select-none shadow-sm">
             {autosaveStatus === 'saving' ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित हो रहा है...' : 'Saving...'}</span>
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित हो रहा है...' : 'Saving...'}</span>
               </>
             ) : (
               <>
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित' : 'Autosaved'}</span>
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">{isHindi ? 'सुरक्षित' : 'Autosaved'}</span>
               </>
             )}
           </div>
@@ -694,11 +742,29 @@ export default function App() {
           {/* 2D Almirah Designer Button */}
           <button
             onClick={() => setIsCabinetDesignerOpen(true)}
-            className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/35 dark:hover:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-900/50 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
             title={isHindi ? "2D अलमारी डिज़ाइनर खोलें" : "Open 2D Almirah Designer"}
           >
             <Hammer size={14} />
             <span className="hidden sm:inline">{isHindi ? "2D अलमारी" : "2D Almirah"}</span>
+          </button>
+
+          {/* Theme Toggle Button */}
+          <button
+            onClick={handleToggleTheme}
+            className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950/45 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900/50 hover:text-slate-950 dark:hover:text-white transition-all shadow-sm active:scale-95 border border-slate-200 dark:border-slate-850 cursor-pointer focus:outline-none"
+            title={theme === 'light' ? (isHindi ? 'डार्क थीम चालू करें' : 'Switch to Dark Theme') : (isHindi ? 'लाइट थीम चालू करें' : 'Switch to Light Theme')}
+          >
+            {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+          </button>
+
+          {/* About Button */}
+          <button
+            onClick={() => setIsAboutOpen(true)}
+            className="p-2 rounded-xl bg-slate-50 dark:bg-slate-950/45 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900/50 hover:text-slate-950 dark:hover:text-white transition-all shadow-sm active:scale-95 border border-slate-200 dark:border-slate-850 cursor-pointer focus:outline-none"
+            title={isHindi ? 'सॉफ्टवेयर के बारे में' : 'About Software'}
+          >
+            <Info size={15} />
           </button>
 
           <HeaderMenu 
@@ -802,8 +868,8 @@ export default function App() {
                 disabled={parts.length === 0 || isComparing}
                 className={`flex items-center gap-1.5 font-bold text-xs py-2.5 px-4 rounded-xl shadow-sm border transition-all cursor-pointer ${
                   parts.length === 0
-                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                    : 'bg-indigo-50 text-indigo-750 hover:bg-indigo-100/80 border-indigo-200 active:scale-95'
+                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed dark:bg-slate-900 dark:text-slate-600 dark:border-slate-800'
+                    : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80 border-indigo-200 dark:bg-indigo-950/45 dark:text-indigo-300 dark:border-indigo-900/50 dark:hover:bg-indigo-950/70 active:scale-95'
                 }`}
               >
                 <RefreshCw size={14} className={isComparing ? 'animate-spin' : ''} />
@@ -921,11 +987,23 @@ export default function App() {
         onExportCsv={handleExportCsv}
         onExportJson={handleExportJson}
         onPrint={handlePrint}
+        onOpenReportPreview={() => setIsReportPreviewOpen(true)}
         isHindi={isHindi}
         translations={t}
         partsCount={parts.reduce((acc, p) => acc + (p.quantity || 0), 0)}
         sheetsCount={result?.totalSheetsUsed || 0}
         utilization={result?.totalUtilization || 0}
+      />
+
+      {/* Blueprint Visual Report & Share Engine */}
+      <ReportPreviewModal
+        isOpen={isReportPreviewOpen}
+        onClose={() => setIsReportPreviewOpen(false)}
+        parts={parts}
+        settings={settings}
+        result={result}
+        isHindi={isHindi}
+        onPrint={handlePrint}
       />
 
       {/* Estimate Calculator Modal */}
@@ -967,6 +1045,13 @@ export default function App() {
           });
         }}
         language={language}
+      />
+
+      {/* About App Modal */}
+      <AboutModal
+        isOpen={isAboutOpen}
+        onClose={() => setIsAboutOpen(false)}
+        isHindi={isHindi}
       />
 
       {/* Toast Notification Container */}

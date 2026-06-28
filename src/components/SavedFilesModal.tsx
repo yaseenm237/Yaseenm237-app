@@ -38,20 +38,35 @@ export default function SavedFilesModal({
   const handleShare = async (job: SavedJob) => {
     try {
       const result = runPacking(job.parts, job.settings);
-      
-      // We will generate the PDF and share it
-      // using the Web Share API if available
+      let text = "";
+      if (isHindi) {
+        text = `*📐 स्मार्ट कारपेंट्री - सुरक्षित जॉब: ${job.name} 📐*\n\n`;
+        text += `• कुल पुर्जे: ${job.parts.length} नग\n`;
+        text += `• आवश्यक शीट्स: ${result.totalSheetsUsed} शीट्स\n`;
+        text += `• दक्षता: ${result.totalUtilization.toFixed(1)}%\n\n`;
+        text += `_साहिरा इंटीरियर - स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र_`;
+      } else {
+        text = `*📐 Smart Carpentry - Saved Job: ${job.name} 📐*\n\n`;
+        text += `• Total parts: ${job.parts.length} pcs\n`;
+        text += `• Sheets required: ${result.totalSheetsUsed} sheets\n`;
+        text += `• Efficiency: ${result.totalUtilization.toFixed(1)}%\n\n`;
+        text += `_Sahira Interior - Smart Carpentry Optimizer_`;
+      }
+
       if (navigator.share) {
-        // Unfortunately pdf generation is synchronous and creates a download,
-        // we might just share the JSON text for now, or generate a simple text summary.
-        // Or we can share the configuration as JSON.
-        const text = `Carpentry Plan: ${job.name}\nParts: ${job.parts.length}\nSheets required: ${result.totalSheetsUsed}`;
         await navigator.share({
           title: job.name,
           text: text
         });
       } else {
-        alert(isHindi ? 'शेयरिंग इस ब्राउज़र में समर्थित नहीं है।' : 'Sharing not supported in this browser.');
+        // Copy to clipboard fallback
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (_) {}
+        
+        // Deep link share on WhatsApp
+        const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+        window.open(whatsappUrl, '_blank');
       }
     } catch (e) {
       console.error(e);
