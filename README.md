@@ -1,3 +1,4 @@
+
 # Yaseen Smart Design & Packing Application
 
 An advanced React + Vite web application built with TypeScript and Tailwind CSS, seamlessly integrated with Capacitor to deliver a high-performance native Android experience. This application is specifically engineered to automate template-based structural layouts, generate modular cabinet/furniture frameworks from dynamic dimension inputs, and optimize multi-material packing lists efficiently.
@@ -26,20 +27,36 @@ Capacitor requires a configuration file at the root of the project to map web as
   "webDir": "dist"
 }
 
+```
+## 🚀 Production Build & APK Generation Flow
+Follow these step-by-step commands in your terminal to compile your latest application upgrades into a mobile package.
+### Step 1: Build the Web Production Assets
+Compile and optimize the frontend React/TypeScript application into static web files:
+```bash
 npm run build
 
+```
+### Step 2: Sync Assets with Native Android Container
+Copy the freshly compiled web assets from the dist/ directory into the native Android platform environment:
+```bash
 npx @capacitor/cli sync
 
+```
+### Step 3: Compile the Android APK
+#### Option A: Generate a Debug APK (For Testing)
+To quickly build an executable package for testing on local devices, run:
+```bash
 cd android && ./gradlew assembleDebug
 
+```
+#### Option B: Generate an Unsigned Release APK (For Production)
+To compile a highly optimized, production-ready package, run:
+```bash
 cd android && ./gradlew assembleRelease
 
-# 1. Generate a keystore certificate (run once)
-keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias my-alias
-
-# 2. Sign the unsigned release APK
-apksigner sign --ks my-release-key.jks android/app/build/outputs/apk/release/app-release-unsigned.apk
-
+```
+## 📂 Project Architecture
+```text
 ├── android/               # Native Android Studio project structure & Gradle setups
 ├── assets/                # Static design resources and application branding graphics
 ├── dist/                  # Production-ready web assets generated after running npm build
@@ -56,3 +73,4 @@ apksigner sign --ks my-release-key.jks android/app/build/outputs/apk/release/app
 ├── package.json           # Node scripts, version control, and engine packages
 └── vite.config.ts         # High-performance asset compilation and server configurations
 
+`
