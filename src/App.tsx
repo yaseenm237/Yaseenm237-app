@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { FileOpener } from '@capacitor-community/file-opener';
+import { Capacitor } from '@capacitor/core';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Language, Unit, PartInput, SheetSettings, PackingResult, AlgoComparison } from './types';
 import { runPacking, compareAlgorithms, convertMmToUnit, convertToMm } from './utils/packer';
@@ -483,10 +486,9 @@ export default function App() {
     setCompareResults(null);
   };
 
-  // CSV Export trigger
-  const handleExportCsv = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)\n";
+  // CSV Export trigger (Web + Mobile Dono ke liye)
+  const handleExportCsv = async () => {
+    let csvRawContent = "Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)\n";
 
     parts.forEach(p => {
       if (p.quantity <= 0) return;
@@ -495,35 +497,67 @@ export default function App() {
         .map(([name, _]) => name)
         .join('');
       
-      csvContent += `"${p.name || 'Unnamed'}",${p.length},${p.width},${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"\n`;
+      csvRawContent += `"${p.name || 'Unnamed'}",${p.length},${p.width},${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"\n`;
     });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `cutting_list_${settings.algorithm}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const fileName = `cutting_list_${settings.algorithm}_${Date.now()}.csv`;
+
+    // 📱 अगर APK (Mobile) में चल रहा है
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Filesystem.writeFile({
+          path: fileName,
+          data: csvRawContent,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+        });
+        alert(isHindi ? "CSV फ़ाइल आपके 'Documents' फ़ोल्डर में सेव हो गई है!" : "CSV File successfully saved to Documents!");
+      } catch (err: any) {
+        alert("Storage Error: " + err.message);
+      }
+    } else {
+      // 💻 अगर कंप्यूटर ब्राउज़र में चल रहा है
+      const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvRawContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
     
     saveJobToStorageAndReset();
   };
 
-  // JSON Export trigger
-  const handleExportJson = () => {
-    const configData = {
-      settings,
-      parts
-    };
+  // JSON Export trigger (Web + Mobile Dono ke liye)
+  const handleExportJson = async () => {
+    const configData = { settings, parts };
     const jsonStr = JSON.stringify(configData, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
+    const fileName = `carpentry_optimizer_config_${Date.now()}.json`;
 
-    const link = document.createElement("a");
-    link.setAttribute("href", dataUri);
-    link.setAttribute("download", `carpentry_optimizer_config.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // 📱 अगर APK में चल रहा है
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Filesystem.writeFile({
+          path: fileName,
+          data: jsonStr,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+        });
+        alert(isHindi ? "JSON बैकअप फ़ाइल 'Documents' में सेव हो गई है!" : "JSON Backup saved to Documents!");
+      } catch (err: any) {
+        alert("Storage Error: " + err.message);
+      }
+    } else {
+      // 💻 अगर कंप्यूटर ब्राउज़र में चल रहा है
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
+      const link = document.createElement("a");
+      link.setAttribute("href", dataUri);
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
     
     saveJobToStorageAndReset();
   };
