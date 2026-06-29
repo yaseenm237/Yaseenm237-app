@@ -107,13 +107,30 @@ else
   echo "✅ Created android/gradle.properties with correct Java Home."
 fi
 
-# 4. Sync assets with Capacitor
-echo "🔄 Step 4: Syncing Web Assets to Android project..."
+# 4. Restoring gradle-wrapper.jar if missing or corrupted
+echo "📦 Step 4: Ensuring Gradle Wrapper is healthy..."
+JAR_PATH="android/gradle/wrapper/gradle-wrapper.jar"
+if [ ! -f "$JAR_PATH" ] || [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -lt 10000 ]; then
+  echo "⚠️  gradle-wrapper.jar is missing, empty or corrupted! Restoring/downloading it..."
+  mkdir -p android/gradle/wrapper
+  curl -Lo "$JAR_PATH" "https://github.com/gradle/gradle/raw/v8.14.3/gradle/wrapper/gradle-wrapper.jar" || \
+  curl -Lo "$JAR_PATH" "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" || \
+  curl -Lo "$JAR_PATH" "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar"
+  echo "✅ Restored gradle-wrapper.jar!"
+else
+  echo "✅ gradle-wrapper.jar is healthy."
+fi
+
+# 5. Sync assets with Capacitor
+echo "🔄 Step 5: Syncing Web Assets to Android project..."
 npx cap sync
 
-# 5. Build Android Project using Gradle
-echo "🏗️  Step 5: Compiling APK using Gradle..."
+# 6. Build Android Project using Gradle
+echo "🏗️  Step 6: Compiling APK using Gradle..."
 cd android
+
+# Ensure gradlew has execution permission
+chmod +x gradlew
 
 # Kill any running Gradle daemons that might be using a different/wrong Java version
 echo "🛑 Stopping any existing stale Gradle daemons..."
