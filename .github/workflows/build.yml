@@ -16,13 +16,13 @@ jobs:
     - name: Setup Node.js environment
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'   # ✅ Latest supported Node.js
         cache: 'npm'
 
     - name: Setup Java JDK
       uses: actions/setup-java@v5
       with:
-        java-version: '21'
+        java-version: '17'   # ✅ Stable for Android Gradle
         distribution: 'temurin'
         cache: 'gradle'
 
@@ -35,13 +35,21 @@ jobs:
     - name: Sync Android Platform
       run: npx cap sync android
 
-    # 🤖 Release APK compile करना (unsigned)
+    # 🤖 Debug APK compile
+    - name: Compile Debug APK
+      run: |
+        cd android && ./gradlew assembleDebug
+
+    # 🤖 Release APK compile (unsigned)
     - name: Compile Release APK
       run: |
         cd android && ./gradlew assembleRelease
 
-    - name: Upload Release APK Artifact
+    # 📦 Upload both APKs as artifacts
+    - name: Upload Debug and Release APKs
       uses: actions/upload-artifact@v4
       with:
-        name: Smart-Carpentry-Optimizer-Release-APK
-        path: android/app/build/outputs/apk/release/app-release.apk
+        name: Smart-Carpentry-Optimizer-APKs
+        path: |
+          android/app/build/outputs/apk/debug/app-debug.apk
+          android/app/build/outputs/apk/release/app-release.apk
