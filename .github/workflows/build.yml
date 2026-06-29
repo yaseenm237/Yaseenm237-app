@@ -34,11 +34,20 @@ jobs:
       run: |
         npm run build
 
-    - name: Sync Web Code with Capacitor Android
+    # 🛠️ अगर पुराना एंड्रॉइड फोल्डर है, तो उसे हटाकर नया फ्रेश फोल्डर बनाना
+    - name: Clean and Re-add Android Platform
       run: |
+        rm -rf android
+        npx cap add android
         npx cap sync android
 
-    # 🛠️ यहाँ हमने '--console=plain' जोड़ दिया है ताकि लॉग्स बिल्कुल सीधे और साफ आएं
+    # 🤖 अब नए साफ़ एंड्रॉइड फोल्डर को कंपाइल करना
     - name: Compile Android Studio Project (Debug APK)
       run: |
-        cd android && ./gradlew clean assembleDebug --console=plain
+        cd android && ./gradlew assembleDebug
+
+    - name: Upload Finished APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Smart-Carpentry-Optimizer-APK
+        path: android/app/build/outputs/apk/debug/app-debug.apk
