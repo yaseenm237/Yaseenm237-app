@@ -3,6 +3,12 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+# If we are inside the android folder, change directory to parent (project root)
+if [ "$(basename "$PWD")" = "android" ]; then
+  echo "🔄 Detected script run inside 'android' folder. Moving to project root..."
+  cd ..
+fi
+
 echo "========================================="
 echo "🛠️  Starting Smart Carpentry APK Builder"
 echo "========================================="
@@ -22,20 +28,22 @@ fi
 # 3. Handle JDK Configuration to resolve "Unsupported class file major version 69"
 echo "☕ Step 3: Configuring JDK..."
 
-# Check if JAVA_HOME is set
-if [ -z "$JAVA_HOME" ]; then
-  # Try to find SDKMAN Java 17 or fallback
-  if [ -d "/usr/local/sdkman/candidates/java/17.0.10-tem" ]; then
-    export JAVA_HOME="/usr/local/sdkman/candidates/java/17.0.10-tem"
-  elif [ -d "/home/vscode/.sdkman/candidates/java/17.0.10-tem" ]; then
-    export JAVA_HOME="/home/vscode/.sdkman/candidates/java/17.0.10-tem"
-  else
-    # Fallback to system java if found
-    export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-  fi
+# Let's explicitly look for SDKMAN Java 17 first since we know it exists in your environment
+if [ -d "/usr/local/sdkman/candidates/java/17.0.10-tem" ]; then
+  export JAVA_HOME="/usr/local/sdkman/candidates/java/17.0.10-tem"
+elif [ -d "/home/vscode/.sdkman/candidates/java/17.0.10-tem" ]; then
+  export JAVA_HOME="/home/vscode/.sdkman/candidates/java/17.0.10-tem"
+elif [ -d "$HOME/.sdkman/candidates/java/17.0.10-tem" ]; then
+  export JAVA_HOME="$HOME/.sdkman/candidates/java/17.0.10-tem"
+elif [ -n "$JAVA_HOME" ]; then
+  echo "👉 Using existing JAVA_HOME from environment..."
+else
+  # Fallback to system java if found
+  export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 fi
 
-echo "👉 Using JAVA_HOME: $JAVA_HOME"
+echo "👉 Selected JAVA_HOME: $JAVA_HOME"
+export PATH="$JAVA_HOME/bin:$PATH"
 
 # Double check gradle.properties exists
 mkdir -p android
