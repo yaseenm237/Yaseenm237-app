@@ -23,7 +23,6 @@ jobs:
       with:
         python-version: '3.11'
 
-    # 🛠️ सुधार: यहाँ हमने libtool, pkg-config, autoconf और automake को पूरी तरह जोड़ दिया है
     - name: Install Buildozer & System Dependencies
       run: |
         sudo apt-get update
@@ -51,7 +50,25 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # 📱 बिल्डोजर को पूरी परमिशन और बिना रुकावट के चलाने के लिए कमांड सुधार
+    # 🛠️ सुधार: यहाँ हमने एंड्रॉइड के सभी लाइसेंस को ऑटोमैटिकली 'Yes' कर दिया है
+    - name: Auto-Accept Android SDK Licenses
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        # पहले से मौजूद एंड्रॉइड होम के लाइसेंस को ऑटो-एक्सेप्ट करना
+        if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        elif [ -d "$ANDROID_HOME/tools/bin" ]; then
+          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
+        fi
+
+    # 📱 अब बिल्डोजर बिना किसी लाइसेंस रुकावट के सीधे APK तैयार करेगा
     - name: Build APK (Debug Mode)
       run: |
-        buildozer android debug
+        yes | buildozer android debug
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PythonApp-Debug-APK
+        path: bin/*.apk
