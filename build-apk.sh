@@ -128,8 +128,11 @@ if [ ! -f "$JAR_PATH" ] || [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -lt 10
   # Check if successfully restored locally, if not try downloading from standard repos
   if [ ! -f "$JAR_PATH" ] || [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -lt 10000 ]; then
     echo "🌐 Downloading gradle-wrapper.jar from official repositories..."
-    curl -Lo "$JAR_PATH" "https://github.com/android/sunflower/raw/main/gradle/wrapper/gradle-wrapper.jar" || \
-    curl -Lo "$JAR_PATH" "https://github.com/ionic-team/capacitor/raw/main/android/gradle/wrapper/gradle-wrapper.jar"
+    # Try Maven Central 8.5 first, then GitHub sunflower, then GitHub capacitor
+    curl -Lfs -o "$JAR_PATH" "https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.5/gradle-wrapper-8.5.jar" || \
+    curl -Lfs -o "$JAR_PATH" "https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.2/gradle-wrapper-8.2.jar" || \
+    curl -Lfs -o "$JAR_PATH" "https://raw.githubusercontent.com/android/sunflower/main/gradle/wrapper/gradle-wrapper.jar" || \
+    curl -Lfs -o "$JAR_PATH" "https://raw.githubusercontent.com/ionic-team/capacitor/main/android/gradle/wrapper/gradle-wrapper.jar"
   fi
   
   if [ -f "$JAR_PATH" ] && [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -gt 10000 ]; then
