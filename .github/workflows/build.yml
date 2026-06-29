@@ -9,7 +9,6 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
 
-    # सर्वर को रिपॉजिटरी में buildozer.spec फाइल लिखने (Push करने) की परमिशन देना
     permissions:
       contents: write
 
@@ -24,25 +23,21 @@ jobs:
       with:
         python-version: '3.11'
 
-    # 🛠️ यहाँ Java 21 और आवश्यक टूल्स बिल्कुल वैसे ही हैं जैसे आपकी बेस्ट स्क्रिप्ट में थे
     - name: Install Buildozer & System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           python3-pip python3-setuptools python3-wheel \
-          git zip unzip openjdk-21-jdk \
+          git zip unzip openjdk-17-jdk \
           zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
           libssl-dev libreadline-dev libffi-dev curl autoconf libtool
         pip install --upgrade pip
         pip install buildozer cython
 
-    # 💾 आपका पसंदीदा फीचर: अगर spec फाइल नहीं है तो बनाकर उसे तुरंत गिटहब पर सेव करो
     - name: Initialize Buildozer Spec (if missing)
       run: |
         if [ ! -f "buildozer.spec" ]; then
           buildozer init
-          
-          # गिटहब बॉट सेटअप करके फाइल को वापस रिपॉजिटरी में पुश करना
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add buildozer.spec
@@ -52,14 +47,14 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # 📱 यहाँ हमने आपकी स्क्रिप्ट में बस 2 लाइनें जोड़ी हैं ताकि गिटहब का नया NDK रास्ते में न आए
     - name: Build APK (Debug Mode)
       run: |
         unset ANDROID_NDK_HOME
         unset ANDROID_NDK_ROOT
-        yes | buildozer android debug
+        export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r28c
+        export ANDROID_NDK=$ANDROIDNDK
+        yes | buildozer android debug --arch=arm64-v8a
 
-    # 📦 सफलता का आख़िरी सिरा: APK को अपलोड करना
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
