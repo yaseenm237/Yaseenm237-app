@@ -38,10 +38,10 @@ jobs:
       run: |
         npx cap sync android
 
-    # 🛠️ यहाँ हमने ग्रैडल को गहराई से जांचने के लिए निर्देश दे दिए हैं
+    # 🛠️ यहाँ हमने फालतू के लॉग्स हटाकर सिर्फ काम की एरर दिखाने को कहा है
     - name: Compile Android Studio Project (Debug APK)
       run: |
-        cd android && ./gradlew assembleDebug --stacktrace --info
+        cd android && ./gradlew assembleDebug --quiet
 
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
