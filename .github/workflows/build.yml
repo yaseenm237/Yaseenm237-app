@@ -13,14 +13,12 @@ jobs:
     - name: Checkout Source Code
       uses: actions/checkout@v4
 
-    # 🛠️ नोड सेटअप (v6.4.0) - यह रिएक्ट कोड को कंपाइल करने के लिए है
     - name: Setup Node.js environment
       uses: actions/setup-node@v6.4.0
       with:
         node-version: '20'
         cache: 'npm'
 
-    # 🛠️ जावा सेटअप (v5.4.0) - यह एंड्रॉइड ग्रैडल के लिए बिल्कुल सटीक है (Java 21)
     - name: Setup Java JDK
       uses: actions/setup-java@v5.4.0
       with:
@@ -28,27 +26,23 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
 
-    # 📦 प्रोजेक्ट के सभी पैकेजेस इंस्टॉल करना
     - name: Install Project Dependencies
       run: |
         npm install
 
-    # 🏗️ रिएक्ट और टेलविंड कोड का प्रोडक्शन बिल्ड बनाना
     - name: Build React Production Code
       run: |
         npm run build
 
-    # 🔄 बने हुए वेब कोड को कैपेसिटर एंड्रॉइड प्रोजेक्ट में सिंक करना
     - name: Sync Web Code with Capacitor Android
       run: |
         npx cap sync android
 
-    # 🤖 ग्रैडल के जरिए सीधे एंड्रॉइड APK तैयार करना (जो पिछली बार Java 21 मांग रहा था)
+    # 🛠️ यहाँ हमने ग्रैडल को गहराई से जांचने के लिए निर्देश दे दिए हैं
     - name: Compile Android Studio Project (Debug APK)
       run: |
-        cd android && ./gradlew assembleDebug
+        cd android && ./gradlew assembleDebug --stacktrace --info
 
-    # 💾 तैयार हुए APK को गिटहब पर आपके लिए अपलोड/सेव करना
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
       with:
