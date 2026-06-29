@@ -38,10 +38,17 @@ jobs:
       run: |
         npx cap sync android
 
-    # 🛠️ यहाँ हमने फालतू के लॉग्स हटाकर सिर्फ काम की एरर दिखाने को कहा है
     - name: Compile Android Studio Project (Debug APK)
       run: |
-        cd android && ./gradlew assembleDebug --quiet
+        cd android && ./gradlew assembleDebug
+
+    # 🛠️ अगर बिल्ड फेल होता है, तो यह स्टेप ग्रैडल की छिपी हुई रिपोर्ट को आपके लिए सेव कर देगा
+    - name: Upload Gradle Problem Report (If Failed)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gradle-Problems-Report
+        path: android/build/reports/problems/
 
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
