@@ -14,40 +14,34 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Node.js environment
-      uses: actions/setup-node@v6.4.0
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
 
     - name: Setup Java JDK
-      uses: actions/setup-java@v5.4.0
+      uses: actions/setup-java@v5
       with:
-        java-version: '21'
+        java-version: '17'
         distribution: 'temurin'
         cache: 'gradle'
 
     - name: Install Project Dependencies
-      run: |
-        npm install
+      run: npm install
 
     - name: Build React Production Code
-      run: |
-        npm run build
+      run: npm run build
 
-    # 🛠️ अगर पुराना एंड्रॉइड फोल्डर है, तो उसे हटाकर नया फ्रेश फोल्डर बनाना
-    - name: Clean and Re-add Android Platform
-      run: |
-        rm -rf android
-        npx cap add android
-        npx cap sync android
+    - name: Sync Android Platform
+      run: npx cap sync android
 
-    # 🤖 अब नए साफ़ एंड्रॉइड फोल्डर को कंपाइल करना
-    - name: Compile Android Studio Project (Debug APK)
+    # 🤖 Release APK compile करना (unsigned)
+    - name: Compile Release APK
       run: |
-        cd android && ./gradlew assembleDebug
+        cd android && ./gradlew assembleRelease
 
-    - name: Upload Finished APK Artifact
+    - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Smart-Carpentry-Optimizer-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+        name: Smart-Carpentry-Optimizer-Release-APK
+        path: android/app/build/outputs/apk/release/app-release.apk
