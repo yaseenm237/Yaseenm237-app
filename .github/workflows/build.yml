@@ -9,7 +9,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # सर्वर को रिपॉजिटरी में फाइल लिखने (Push करने) की परमिशन देना
     permissions:
       contents: write
 
@@ -35,19 +34,18 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Add and Sync Android Platform
+    # 🛠️ यहाँ सुधार किया है: कैपेसिटर CLI और कोर को पहले सही से इंस्टॉल कर रहे हैं
+    - name: Setup Capacitor CLI and Android Platform
       run: |
-        npm install @capacitor/android
-        npx cap add android || echo "Android platform already added"
-        npx cap sync android
+        npm install @capacitor/core @capacitor/cli @capacitor/android
+        npx capacitor add android || npx cap add android || echo "Android platform already added"
+        npx capacitor sync android || npx cap sync android
 
-    # 🔥 आपका आइडिया: जो भी नई फाइल्स (Android, JSON आदि) बनी हैं, उन्हें वापस रिपॉजिटरी में पुश करना
     - name: Automatically Push Created Files Back to Repository
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git add .
-        # अगर कोई नई फाइल बनी होगी तभी कमिट करेगा, वरना एरर नहीं देगा
         git diff-index --quiet HEAD || git commit -m "Automated sync: Added Android & JSON config files [skip ci]"
         git push origin main
       env:
