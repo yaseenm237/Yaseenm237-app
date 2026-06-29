@@ -22,7 +22,7 @@ jobs:
     - name: Setup Java JDK
       uses: actions/setup-java@v5
       with:
-        java-version: '17'   # ✅ Stable for Android Gradle
+        java-version: '21'   # ✅ Stable for Android Gradle
         distribution: 'temurin'
         cache: 'gradle'
 
