@@ -6,7 +6,53 @@
 import React, { useState, useEffect } from 'react';
 import { PartInput, Language, Grain, Edges, SheetSettings } from '../types';
 import { CARPENTRY_PRESETS } from '../utils/presets';
-import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle, X } from 'lucide-react';
+import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle, X, Navigation, Target } from 'lucide-react';
+
+const GrainToggle = ({ 
+  grain, 
+  onChange,
+  isHindi
+}: { 
+  grain: Grain, 
+  onChange: (g: Grain) => void,
+  isHindi: boolean
+}) => {
+  const nextGrain = grain === 'L' ? 'W' : grain === 'W' ? 'N' : 'L';
+  
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(nextGrain)}
+      className="relative flex items-center justify-between w-full border border-slate-200 rounded-lg px-2 py-1 bg-white hover:bg-slate-50 transition-colors focus:ring-2 focus:ring-indigo-500/20 focus:outline-none h-[34px]"
+      title={isHindi ? 'ग्रेन की दिशा बदलने के लिए क्लिक करें' : 'Click to toggle grain direction'}
+    >
+      <span className="text-xs font-semibold text-slate-700">
+        {grain === 'L' ? (isHindi ? 'लंबाई' : 'Length') : 
+         grain === 'W' ? (isHindi ? 'चौड़ाई' : 'Width') : 
+         (isHindi ? 'कोई नहीं' : 'None')}
+      </span>
+      <div className={`w-6 h-6 border rounded-[4px] flex items-center justify-center shrink-0 shadow-sm ${grain === 'N' ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'} overflow-hidden`}>
+        {grain === 'L' && (
+          <div className="flex gap-[3px] h-full w-full justify-center py-[2px] transform">
+            <div className="w-[1.5px] h-full bg-amber-600/50 rounded-full"></div>
+            <div className="w-[1.5px] h-full bg-amber-600/50 rounded-full"></div>
+            <div className="w-[1.5px] h-full bg-amber-600/50 rounded-full"></div>
+          </div>
+        )}
+        {grain === 'W' && (
+          <div className="flex flex-col gap-[3px] w-full h-full justify-center px-[2px] transform">
+            <div className="h-[1.5px] w-full bg-amber-600/50 rounded-full"></div>
+            <div className="h-[1.5px] w-full bg-amber-600/50 rounded-full"></div>
+            <div className="h-[1.5px] w-full bg-amber-600/50 rounded-full"></div>
+          </div>
+        )}
+        {grain === 'N' && (
+          <div className="text-[10px] text-slate-400 font-bold leading-none">Ø</div>
+        )}
+      </div>
+    </button>
+  );
+};
 
 interface CuttingListPanelProps {
   parts: PartInput[];
@@ -35,6 +81,7 @@ export default function CuttingListPanel({
   const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append');
   const hasMultiMaterials = (settings.stockItems?.length || 0) > 1;
   const hasEdgeMaterials = (settings.edgeBandItems?.length || 0) > 0;
+  const [editingHolesFor, setEditingHolesFor] = useState<string | null>(null);
 
   // Lock body scroll when paste modal is open
   useEffect(() => {
@@ -341,7 +388,7 @@ export default function CuttingListPanel({
                 <th className="pb-3 w-[80px]">{translations.h_qty}</th>
                 <th className="pb-3 w-[120px]">{translations.h_edges} (T, B, L, R)</th>
                 {hasEdgeMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'एज बैंड टेप' : 'Edge Band'}</th>}
-                <th className="pb-3 w-[50px] text-center"></th>
+                <th className="pb-3 w-[80px] text-center"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -404,15 +451,11 @@ export default function CuttingListPanel({
 
                   {/* Grain */}
                   <td className="py-2.5 pr-2">
-                    <select
-                      value={part.grain}
-                      onChange={(e) => handleRowChange(part.id, 'grain', e.target.value as Grain)}
-                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none font-medium text-slate-700"
-                    >
-                      <option value="L">{isHindi ? 'लंबाई ↕' : 'Length ↕'}</option>
-                      <option value="W">{isHindi ? 'चौड़ाई ↔' : 'Width ↔'}</option>
-                      <option value="N">{isHindi ? 'कोई नहीं ♻' : 'None ♻'}</option>
-                    </select>
+                    <GrainToggle
+                      grain={part.grain}
+                      onChange={(g) => handleRowChange(part.id, 'grain', g)}
+                      isHindi={isHindi}
+                    />
                   </td>
 
                   {/* Rotation */}
@@ -493,8 +536,16 @@ export default function CuttingListPanel({
                     </td>
                   )}
 
-                  {/* Delete Button */}
-                  <td className="py-2.5 text-center">
+                  {/* Actions (Holes + Delete) */}
+                  <td className="py-2.5 text-center flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditingHolesFor(part.id)}
+                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${part.drillHoles?.length ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                      title={isHindi ? 'छेद (Holes) सेट करें' : 'Manage Drill Holes'}
+                    >
+                      <Target size={15} />
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleDeleteRow(part.id)}
@@ -700,6 +751,117 @@ export default function CuttingListPanel({
           </div>
         </div>
       )}
+      {/* Hole Editing Modal */}
+      {editingHolesFor && (() => {
+        const part = parts.find(p => p.id === editingHolesFor);
+        if (!part) return null;
+
+        const holes = part.drillHoles || [];
+
+        const updateHoles = (newHoles: any[]) => {
+          handleRowChange(part.id, 'drillHoles', newHoles);
+        };
+
+        const addHole = () => {
+          updateHoles([...holes, { id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), x: 50, y: 50, diameter: 5, label: 'Hinge' }]);
+        };
+
+        const updateHole = (id: string, field: string, value: any) => {
+          updateHoles(holes.map(h => h.id === id ? { ...h, [field]: value } : h));
+        };
+
+        const deleteHole = (id: string) => {
+          updateHoles(holes.filter(h => h.id !== id));
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                    <Target className="text-indigo-600" size={20} />
+                    {isHindi ? 'ड्रिल होल सेट करें' : 'Manage Drill Holes'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {part.name} ({part.length}x{part.width})
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEditingHolesFor(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-xl transition-colors cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex-1">
+                <div className="space-y-3">
+                  {holes.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 text-sm">
+                      {isHindi ? 'इस पुर्जे में कोई छेद नहीं है।' : 'No drill holes defined for this part.'}
+                    </div>
+                  ) : (
+                    holes.map((h, i) => (
+                      <div key={h.id} className="flex gap-2 items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
+                        <span className="text-xs font-bold text-slate-400 w-4">{i + 1}.</span>
+                        <input
+                          type="text"
+                          placeholder={isHindi ? 'लेबल' : 'Label'}
+                          value={h.label || ''}
+                          onChange={(e) => updateHole(h.id, 'label', e.target.value)}
+                          className="flex-1 min-w-0 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        />
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold">X:</span>
+                          <input
+                            type="number"
+                            value={h.x}
+                            onChange={(e) => updateHole(h.id, 'x', Number(e.target.value))}
+                            className="w-16 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold">Y:</span>
+                          <input
+                            type="number"
+                            value={h.y}
+                            onChange={(e) => updateHole(h.id, 'y', Number(e.target.value))}
+                            className="w-16 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 font-bold">Ø:</span>
+                          <input
+                            type="number"
+                            value={h.diameter}
+                            onChange={(e) => updateHole(h.id, 'diameter', Number(e.target.value))}
+                            className="w-14 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                        <button
+                          onClick={() => deleteHole(h.id)}
+                          className="p-1 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                <button
+                  onClick={addHole}
+                  className="mt-4 w-full py-2 flex items-center justify-center gap-2 text-sm font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors cursor-pointer border border-indigo-100"
+                >
+                  <Plus size={16} />
+                  {isHindi ? 'नया छेद जोड़ें' : 'Add Drill Hole'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

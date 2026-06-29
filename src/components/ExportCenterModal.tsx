@@ -14,7 +14,8 @@ import {
   ArrowRight,
   TrendingUp,
   Settings,
-  Grid
+  Grid,
+  Target
 } from 'lucide-react';
 
 interface ExportCenterModalProps {
@@ -22,6 +23,7 @@ interface ExportCenterModalProps {
   onClose: () => void;
   onExportCsv: () => void;
   onExportJson: () => void;
+  onExportCNC?: () => void;
   onPrint: () => void;
   onOpenReportPreview: () => void;
   isHindi: boolean;
@@ -36,6 +38,7 @@ export default function ExportCenterModal({
   onClose,
   onExportCsv,
   onExportJson,
+  onExportCNC,
   onPrint,
   onOpenReportPreview,
   isHindi,
@@ -115,7 +118,7 @@ export default function ExportCenterModal({
 
             {/* Modal Body: Responsive Bento Grid for Export Options */}
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50/30">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 
                 {/* 1. PDF / PRINT REPORT */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-500/50 hover:shadow-md transition-all group">
@@ -307,6 +310,57 @@ export default function ExportCenterModal({
                     }`}
                   >
                     <span>{isHindi ? "जेसन (.json) एक्सपोर्ट" : "Export JSON Backup"}</span>
+                    <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
+
+                {/* 4. CNC COORDINATES */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-500/50 hover:shadow-md transition-all group">
+                  <div className="flex flex-col gap-4">
+                    {/* Thumbnail Preview */}
+                    <div className="aspect-[4/3] bg-slate-900 rounded-xl border border-slate-950 overflow-hidden relative flex flex-col p-2.5 shadow-md">
+                      {/* Stylized CNC path mockup */}
+                      <div className="font-mono text-[5px] text-emerald-400 flex-1 overflow-hidden leading-relaxed">
+                        <p>G21 G90 G94</p>
+                        <p>G00 Z5.0</p>
+                        <p className="text-amber-400">; Part: Door</p>
+                        <p>G00 X15.0 Y20.0</p>
+                        <p>G01 Z-5.0 F800</p>
+                        <p>G01 X315.0</p>
+                        <p>G01 Y420.0</p>
+                        <p className="text-amber-400">; Drill: Hinge 1</p>
+                        <p>G00 X30.0 Y100.0</p>
+                        <p>G01 Z-12.0</p>
+                      </div>
+                    </div>
+
+                    {/* Metadata Details */}
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <Target size={16} className="text-indigo-600" />
+                        {isHindi ? "सीएनसी कोआर्डिनेट्स" : "CNC Coordinates"}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                        {isHindi 
+                          ? "ड्रिल होल (छेद) और पुर्जों के ग्लोबल लेआउट निर्देशांक CSV में एक्सपोर्ट करें।" 
+                          : "Export packed part layout positions and global drill hole coordinates for CNC or manual routing."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (onExportCNC) onExportCNC();
+                      onClose();
+                    }}
+                    disabled={partsCount === 0}
+                    className={`mt-6 w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2.5 px-4 rounded-xl shadow-md transition-all cursor-pointer ${
+                      partsCount === 0
+                        ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 group-hover:scale-[1.02] active:scale-[0.98]'
+                    }`}
+                  >
+                    <span>{isHindi ? "कोआर्डिनेट्स एक्सपोर्ट" : "Export Drill Holes"}</span>
                     <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>

@@ -14,6 +14,14 @@ export interface Edges {
   R: boolean; // Right
 }
 
+export interface DrillHole {
+  id: string;
+  x: number; // X coordinate from part's top-left
+  y: number; // Y coordinate from part's top-left
+  diameter: number; // Hole diameter
+  label?: string; // Optional label (e.g. 'Hinge', 'Pin')
+}
+
 export interface PartInput {
   id: string;
   name: string;
@@ -25,6 +33,7 @@ export interface PartInput {
   edges: Edges;
   materialId?: string; // Links to a specific stock material ID
   edgeMaterialId?: string; // Links to a specific edge banding material
+  drillHoles?: DrillHole[];
 }
 
 export interface StockItem {
@@ -95,6 +104,7 @@ export interface PackedPart {
   edges: Edges;
   grain: Grain;
   edgeMaterialId?: string;
+  drillHoles?: DrillHole[];
 }
 
 export interface SheetLayout {

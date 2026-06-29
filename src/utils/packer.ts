@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { PartInput, SheetSettings, PackingResult, SheetLayout, PackedPart, Edges, AlgoComparison } from '../types';
+import { PartInput, SheetSettings, PackingResult, SheetLayout, PackedPart, Edges, AlgoComparison, DrillHole } from '../types';
 
 // Convert input value to millimeters
 export function convertToMm(value: number, unit: 'Inch' | 'CM' | 'MM'): number {
@@ -74,6 +74,7 @@ interface PartToPack {
   grain: 'L' | 'W' | 'N';
   allowRot: boolean;
   edges: Edges;
+  drillHoles?: DrillHole[];
 }
 
 /**
@@ -348,6 +349,12 @@ export function runPackingSingleMaterial(
         grain: part.grain,
         allowRot: part.allowRot,
         edges: { ...part.edges },
+        drillHoles: part.drillHoles ? part.drillHoles.map(h => ({
+          ...h,
+          x: convertToMm(h.x, unit),
+          y: convertToMm(h.y, unit),
+          diameter: convertToMm(h.diameter, unit),
+        })) : undefined,
       });
     }
   }
@@ -477,6 +484,7 @@ export function runPackingSingleMaterial(
             isRotated: bestOrientation.rot,
             edges: part.edges,
             grain: part.grain,
+            drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
           });
 
           sh.usedW += bestOrientation.w;
@@ -523,6 +531,7 @@ export function runPackingSingleMaterial(
                 isRotated: bestNewOpt.rot,
                 edges: part.edges,
                 grain: part.grain,
+                drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
               }]
             };
 
@@ -662,6 +671,7 @@ export function runPackingSingleMaterial(
             isRotated: bestOrientation.rot,
             edges: part.edges,
             grain: part.grain,
+            drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
           });
 
           col.usedH += bestOrientation.h;
@@ -708,6 +718,7 @@ export function runPackingSingleMaterial(
                 isRotated: bestNewOpt.rot,
                 edges: part.edges,
                 grain: part.grain,
+                drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
               }]
             };
 
@@ -849,6 +860,7 @@ export function runPackingSingleMaterial(
             isRotated: bestIsRotated,
             edges: part.edges,
             grain: part.grain,
+            drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
           });
 
           // Split the free rect using SAS (Short Side Split)
@@ -971,6 +983,7 @@ export function runPackingSingleMaterial(
             isRotated: bestIsRotated,
             edges: part.edges,
             grain: part.grain,
+            drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
           });
 
           // Update free rects: split any overlapping free rects with the newly placed part
@@ -1146,6 +1159,17 @@ export function compareAlgorithms(
   });
 }
 
+function transformHoles(holes: DrillHole[] | undefined, isRotated: boolean, cutL: number, cutW: number): DrillHole[] | undefined {
+  if (!holes || holes.length === 0) return undefined;
+  return holes.map(h => {
+    if (isRotated) {
+      // 90 degrees clockwise rotation: x_new = cutW - y_old, y_new = x_old
+      return { ...h, x: cutW - h.y, y: h.x };
+    }
+    return { ...h };
+  });
+}
+
 /**
  * Computes non-overlapping waste rectangles by taking a full sheet and subtracting placed parts.
  * Uses a coordinate compression grid-merging algorithm to consolidate waste into the largest possible pieces.
@@ -1155,6 +1179,7 @@ export function computeWasteRects(
   binH: number,
   parts: PackedPart[]
 ): { x: number; y: number; w: number; h: number }[] {
+
   const tolerance = 0.1; // 0.1 mm tolerance
 
   // 1. Collect all unique X coordinates (boundaries)

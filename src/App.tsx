@@ -610,6 +610,60 @@ export default function App() {
     saveJobToStorageAndReset();
   };
 
+  const handleExportCNC = () => {
+    if (!result) {
+      addToast(
+        isHindi ? "कोई लेआउट नहीं है। कृपया पहले पैक करें।" : "No layout to export. Please pack first.",
+        "error"
+      );
+      return;
+    }
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "SheetIndex,PartId,PartName,PartX(mm),PartY(mm),PartW(mm),PartH(mm),Rotated,HoleLabel,HoleGlobalX(mm),HoleGlobalY(mm),HoleDia(mm)\n";
+
+    const lines: string[] = ["SheetIndex,PartId,PartName,PartX(mm),PartY(mm),PartW(mm),PartH(mm),Rotated,HoleLabel,HoleGlobalX(mm),HoleGlobalY(mm),HoleDia(mm)"];
+
+    result.layouts.forEach(layout => {
+      layout.parts.forEach(p => {
+        if (!p.drillHoles || p.drillHoles.length === 0) {
+          // Export part without holes
+          const line = `${layout.sheetIndex},"${p.id}","${p.name}",${p.x.toFixed(2)},${p.y.toFixed(2)},${p.w.toFixed(2)},${p.h.toFixed(2)},${p.isRotated ? 'Y' : 'N'},,,,`;
+          csvContent += line + "\n";
+          lines.push(line);
+        } else {
+          p.drillHoles.forEach(h => {
+            const hGlobalX = p.x + h.x;
+            const hGlobalY = p.y + h.y;
+            const line = `${layout.sheetIndex},"${p.id}","${p.name}",${p.x.toFixed(2)},${p.y.toFixed(2)},${p.w.toFixed(2)},${p.h.toFixed(2)},${p.isRotated ? 'Y' : 'N'},"${h.label || 'Hole'}",${hGlobalX.toFixed(2)},${hGlobalY.toFixed(2)},${h.diameter.toFixed(2)}`;
+            csvContent += line + "\n";
+            lines.push(line);
+          });
+        }
+      });
+    });
+
+    try {
+      navigator.clipboard.writeText(lines.join("\n"));
+      addToast(
+        isHindi 
+          ? "सीएनसी कोआर्डिनेट्स क्लिपबोर्ड पर कॉपी और डाउनलोड हो गए हैं!" 
+          : "CNC Coordinates copied to clipboard & downloaded successfully!", 
+        "success"
+      );
+    } catch (e) {
+      console.error(e);
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "cnc_coordinates.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // JSON Import trigger
   const handleImportJson = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -986,6 +1040,7 @@ export default function App() {
         onClose={() => setIsExportOpen(false)}
         onExportCsv={handleExportCsv}
         onExportJson={handleExportJson}
+        onExportCNC={handleExportCNC}
         onPrint={handlePrint}
         onOpenReportPreview={() => setIsReportPreviewOpen(true)}
         isHindi={isHindi}

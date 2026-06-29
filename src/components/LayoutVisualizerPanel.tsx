@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { PackingResult, Language, SheetSettings, PackedPart, SheetLayout } from '../types';
 import { convertMmToUnit, convertToMm, getEdgeBandingSummary } from '../utils/packer';
 import { Download, Printer, Layout, Percent, ClipboardCheck, Ruler, AlertCircle, ZoomIn, ZoomOut, Sliders, Check, X, RotateCw, Undo2 } from 'lucide-react';
@@ -94,6 +95,7 @@ export default function LayoutVisualizerPanel({
   const [zoom, setZoom] = useState(100);
   const [showGrid, setShowGrid] = useState(true);
   const [showRuler, setShowRuler] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [showGrandSummary, setShowGrandSummary] = useState(false);
   const [showCutSequence, setShowCutSequence] = useState(false);
   const [fullScreenSheet, setFullScreenSheet] = useState<SheetLayout | null>(null);
@@ -337,6 +339,86 @@ export default function LayoutVisualizerPanel({
     setDragStart(null);
   };
 
+  const renderHeatmapOverlay = (pad: number, rawLMm: number, rawWMm: number, parts: PackedPart[], trim: number) => {
+    if (!showHeatmap) return null;
+    
+    // We create a grid to approximate empty spaces. 
+    // Higher columns = more precision, but slightly slower. 60 is a good balance.
+    const cols = 60;
+    const rows = Math.max(10, Math.floor((rawWMm / rawLMm) * cols));
+    const cellW = rawLMm / cols;
+    const cellH = rawWMm / rows;
+
+    const grid = Array(rows).fill(0).map(() => Array(cols).fill(0));
+
+    // Mark cells that are covered by parts
+    for (const part of parts) {
+      const pX = part.x + trim;
+      const pY = part.y + trim;
+      const pW = part.rotated ? part.w : part.l;
+      const pH = part.rotated ? part.l : part.w;
+      
+      const startC = Math.floor(pX / cellW);
+      const endC = Math.min(cols - 1, Math.floor((pX + pW) / cellW));
+      const startR = Math.floor(pY / cellH);
+      const endR = Math.min(rows - 1, Math.floor((pY + pH) / cellH));
+
+      for (let r = Math.max(0, startR); r <= endR; r++) {
+        for (let c = Math.max(0, startC); c <= endC; c++) {
+          grid[r][c] = 1;
+        }
+      }
+    }
+
+    // 2-pass distance transform (Manhattan)
+    const dist = Array(rows).fill(0).map(() => Array(cols).fill(9999));
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] === 1) {
+          dist[r][c] = 0;
+        } else {
+          if (r > 0) dist[r][c] = Math.min(dist[r][c], dist[r-1][c] + 1);
+          if (c > 0) dist[r][c] = Math.min(dist[r][c], dist[r][c-1] + 1);
+        }
+      }
+    }
+    
+    let maxDist = 0;
+    for (let r = rows - 1; r >= 0; r--) {
+      for (let c = cols - 1; c >= 0; c--) {
+        if (r < rows - 1) dist[r][c] = Math.min(dist[r][c], dist[r+1][c] + 1);
+        if (c < cols - 1) dist[r][c] = Math.min(dist[r][c], dist[r][c+1] + 1);
+        if (dist[r][c] > maxDist && dist[r][c] !== 9999) maxDist = dist[r][c];
+      }
+    }
+
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] === 0) {
+          const d = dist[r][c];
+          // Normalized distance (0 to 1)
+          const intensity = maxDist > 0 ? (d / maxDist) : 0;
+          // Map to hue: 50 (Yellow) for low waste, 0 (Red) for high waste
+          const hue = Math.max(0, 50 - intensity * 50);
+          cells.push(
+            <rect
+              key={`hm-${r}-${c}`}
+              x={pad + c * cellW}
+              y={pad + r * cellH}
+              width={cellW + 1}
+              height={cellH + 1}
+              fill={`hsla(${hue}, 100%, 50%, ${0.15 + intensity * 0.7})`}
+              pointerEvents="none"
+            />
+          );
+        }
+      }
+    }
+
+    return <g className="heatmap-overlay">{cells}</g>;
+  };
+
   return (
     <div id="visualizer-panel" className="flex flex-col gap-6">
       {/* KPI Stats Grid */}
@@ -500,6 +582,19 @@ export default function LayoutVisualizerPanel({
               {isHindi ? "पैमाना" : "Ruler"}
             </button>
             <button
+              id="heatmap-toggle-btn"
+              type="button"
+              onClick={() => setShowHeatmap(prev => !prev)}
+              className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                showHeatmap
+                  ? 'bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-100'
+                  : 'bg-white text-slate-500 border-slate-200 hover:text-slate-700 hover:bg-white'
+              }`}
+              title={isHindi ? "हीटमैप दिखाएं/छिपाएं (कतरन को लाल रंग से हाईलाइट करें)" : "Show/Hide Waste Heatmap"}
+            >
+              {isHindi ? "हीटमैप" : "Heatmap"}
+            </button>
+            <button
               id="sequence-toggle-btn"
               type="button"
               onClick={() => setShowCutSequence(prev => !prev)}
@@ -556,6 +651,8 @@ export default function LayoutVisualizerPanel({
           const pad = 45;
           const svgW = rawLMm + 2 * pad;
           const svgH = rawWMm + 2 * pad;
+          
+          const currentParts = editingSheetIndex === layout.sheetIndex ? editingParts : layout.parts;
 
           return (
             <div 
@@ -595,13 +692,42 @@ export default function LayoutVisualizerPanel({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
-                  <div className="text-right mr-2 hidden md:block">
-                    <span className="bg-emerald-50 border border-emerald-100 text-emerald-800 font-extrabold text-xs px-3 py-1.5 rounded-xl">
-                      {translations.efficiency}: {((layout.usedArea / layout.totalArea) * 100).toFixed(1)}%
-                    </span>
-                    <span className="ml-2 bg-indigo-50 border border-indigo-100 text-indigo-800 font-extrabold text-xs px-3 py-1.5 rounded-xl">
-                      {translations.sheet_waste}: {layout.wastePercent.toFixed(1)}%
-                    </span>
+                  <div className="text-right mr-2 hidden md:flex items-center gap-3">
+                    <div className="flex flex-col gap-1 items-end">
+                      <span className="bg-emerald-50 border border-emerald-100 text-emerald-800 font-extrabold text-[10px] px-2 py-0.5 rounded-lg whitespace-nowrap">
+                        {translations.efficiency}: {((layout.usedArea / layout.totalArea) * 100).toFixed(1)}%
+                      </span>
+                      <span className="bg-rose-50 border border-rose-100 text-rose-800 font-extrabold text-[10px] px-2 py-0.5 rounded-lg whitespace-nowrap">
+                        {translations.sheet_waste}: {layout.wastePercent.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="w-12 h-12 relative flex items-center justify-center shrink-0" title="Material (Green) vs Waste (Red)">
+                      <PieChart width={48} height={48}>
+                        <Pie
+                          data={[
+                            { name: 'Used', value: layout.usedArea },
+                            { name: 'Waste', value: layout.totalArea - layout.usedArea }
+                          ]}
+                          dataKey="value"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={14}
+                          outerRadius={24}
+                          stroke="none"
+                          isAnimationActive={false}
+                        >
+                          <Cell fill="#10b981" />
+                          <Cell fill="#ef4444" />
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value: number, name: string) => [
+                            ((value / layout.totalArea) * 100).toFixed(1) + '%', 
+                            name === 'Used' ? (isHindi ? 'उपयोग' : 'Used') : (isHindi ? 'कतरन' : 'Waste')
+                          ]}
+                          contentStyle={{ fontSize: '10px', padding: '4px 8px', borderRadius: '8px' }}
+                        />
+                      </PieChart>
+                    </div>
                   </div>
 
                   {editingSheetIndex === layout.sheetIndex ? (
@@ -807,6 +933,9 @@ export default function LayoutVisualizerPanel({
                       opacity="0.8"
                       pointerEvents="none"
                     />
+
+                    {/* Heatmap Overlay */}
+                    {renderHeatmapOverlay(pad, rawLMm, rawWMm, currentParts, settings.trimMargin)}
 
                     {/* Grid Overlay */}
                     {showGrid && (() => {
@@ -1309,6 +1438,31 @@ export default function LayoutVisualizerPanel({
                                 {part.name.substring(0, 3)}..
                               </text>
                             ) : null}
+
+                            {/* Drill Holes */}
+                            {part.drillHoles?.map((hole, hIdx) => {
+                              const hX = partX + hole.x;
+                              const hY = partY + hole.y;
+                              const hDia = hole.diameter;
+                              return (
+                                <g key={`hole-${part.id}-${hIdx}`}>
+                                  <circle 
+                                    cx={hX} 
+                                    cy={hY} 
+                                    r={hDia / 2} 
+                                    fill="#f8fafc" 
+                                    stroke="#3b82f6" 
+                                    strokeWidth="1"
+                                  />
+                                  <circle 
+                                    cx={hX} 
+                                    cy={hY} 
+                                    r={1} 
+                                    fill="#1d4ed8" 
+                                  />
+                                </g>
+                              );
+                            })}
 
                             {/* Rich Tooltip */}
                             <title>
@@ -1829,6 +1983,9 @@ export default function LayoutVisualizerPanel({
                     <rect x={pad} y={pad} width={rawLMm} height={rawWMm} fill="url(#zoom-wood-grain)" rx="3" />
                     <rect x={pad + T} y={pad + T} width={rawLMm - 2 * T} height={rawWMm - 2 * T} fill="none" stroke="#ef4444" strokeWidth="1" strokeDasharray="5,5" />
 
+                    {/* Heatmap Overlay */}
+                    {renderHeatmapOverlay(pad, rawLMm, rawWMm, fullScreenSheet.parts, settings.trimMargin)}
+
                     {/* Grid Overlay */}
                     {showGrid && (() => {
                       const gridSpacingMm = unit === 'Inch' ? 6 * 25.4 : unit === 'CM' ? 10 * 10 : 100;
@@ -1942,10 +2099,10 @@ export default function LayoutVisualizerPanel({
 
                     {/* Parts */}
                     {fullScreenSheet.parts.map((p, idx) => {
-                      const xMm = convertToMm(p.x, unit) + pad;
-                      const yMm = convertToMm(p.y, unit) + pad;
-                      const wMm = convertToMm(p.w, unit);
-                      const hMm = convertToMm(p.h, unit);
+                      const xMm = pad + T + p.x;
+                      const yMm = pad + T + p.y;
+                      const wMm = p.w;
+                      const hMm = p.h;
                       const fillColor = getPartColor(p.name, idx);
 
                       return (
@@ -1988,6 +2145,31 @@ export default function LayoutVisualizerPanel({
                               )}
                             </>
                           )}
+
+                          {/* Drill Holes */}
+                          {p.drillHoles?.map((hole, hIdx) => {
+                            const hX = hole.x; 
+                            const hY = hole.y;
+                            const hDia = hole.diameter;
+                            return (
+                              <g key={`fs-hole-${p.id}-${hIdx}`}>
+                                <circle 
+                                  cx={xMm + hX} 
+                                  cy={yMm + hY} 
+                                  r={hDia / 2} 
+                                  fill="white" 
+                                  stroke="#3b82f6" 
+                                  strokeWidth="1.5"
+                                />
+                                <circle 
+                                  cx={xMm + hX} 
+                                  cy={yMm + hY} 
+                                  r={1} 
+                                  fill="#1d4ed8" 
+                                />
+                              </g>
+                            );
+                          })}
                         </g>
                       );
                     })}
