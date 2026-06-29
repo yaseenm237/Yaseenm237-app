@@ -28,12 +28,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y \
           python3-pip python3-setuptools python3-wheel \
-          git zip unzip openjdk-21-jdk \
+          git zip unzip openjdk-17-jdk \
           zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
           libssl-dev libreadline-dev libffi-dev curl \
           autoconf automake libtool pkg-config ccache
         pip install --upgrade pip
-        pip install buildozer cython
+        pip install "buildozer>=1.5.0" cython
 
     # 💾 आपका पसंदीदा फीचर: अगर spec फाइल नहीं है तो बनाकर गिटहब पर ऑटो-पुश करो
     - name: Initialize Buildozer Spec (if missing)
@@ -41,34 +41,31 @@ jobs:
         if [ ! -f "buildozer.spec" ]; then
           buildozer init
           
+          # यहाँ हम डिफ़ॉल्ट NDK वर्जन को r25b पर सेट कर रहे हैं ताकि पुराना क्रैश न हो
+          sed -i 's/# android.ndk = 23b/android.ndk = 25b/g' buildozer.spec
+          
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add buildozer.spec
-          git commit -m "Automated sync: Created buildozer.spec file [skip ci]"
+          git commit -m "Automated sync: Created buildozer.spec file with NDK fix [skip ci]"
           git push origin main
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # 🛠️ सुधार: यहाँ हमने एंड्रॉइड के सभी लाइसेंस को ऑटोमैटिकली 'Yes' कर दिया है
     - name: Auto-Accept Android SDK Licenses
       run: |
         mkdir -p ~/.android
         touch ~/.android/repositories.cfg
-        # पहले से मौजूद एंड्रॉइड होम के लाइसेंस को ऑटो-एक्सेप्ट करना
         if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
         elif [ -d "$ANDROID_HOME/tools/bin" ]; then
           yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
         fi
 
-    # 📱 अब बिल्डोजर बिना किसी लाइसेंस रुकावट के सीधे APK तैयार करेगा
+    # 📱 गिटहब के नए NDK को ओवरराइड करके सही कंपाइलेशन मोड में रन करना
     - name: Build APK (Debug Mode)
       run: |
+        export ANDROID_NDK_HOME=""
+        export ANDROID_NDK_ROOT=""
         yes | buildozer android debug
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: PythonApp-Debug-APK
-        path: bin/*.apk
