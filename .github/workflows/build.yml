@@ -42,16 +42,9 @@ jobs:
       run: |
         cd android && ./gradlew assembleDebug
 
-    # 🛠️ अगर बिल्ड फेल होता है, तो यह स्टेप ग्रैडल की छिपी हुई रिपोर्ट को आपके लिए सेव कर देगा
-    - name: Upload Gradle Problem Report (If Failed)
+    # 🛠️ अगर बिल्ड फेल होता है, तो यह कमांड छिपी हुई रिपोर्ट का पूरा सच सीधे स्क्रीन पर छाप देगा
+    - name: Print Gradle Error Report on Screen (If Failed)
       if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: Gradle-Problems-Report
-        path: android/build/reports/problems/
-
-    - name: Upload Finished APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Smart-Carpentry-Optimizer-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+      run: |
+        echo "=== GRAPLE PROBLEM REPORT ==="
+        cat android/build/reports/problems/problems-report.html || echo "Report file not found"
