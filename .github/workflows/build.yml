@@ -9,7 +9,6 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
 
-    # सर्वर को रिपॉजिटरी में buildozer.spec फाइल लिखने (Push करने) की परमिशन देना
     permissions:
       contents: write
 
@@ -24,7 +23,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    # 🛠️ यहाँ हमने Java 21 और आवश्यक टूल्स को अपडेट किया है
+    # 🛠️ सुधार: यहाँ हमने libtool, pkg-config, autoconf और automake को पूरी तरह जोड़ दिया है
     - name: Install Buildozer & System Dependencies
       run: |
         sudo apt-get update
@@ -32,17 +31,17 @@ jobs:
           python3-pip python3-setuptools python3-wheel \
           git zip unzip openjdk-21-jdk \
           zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
-          libssl-dev libreadline-dev libffi-dev curl autoconf libtool
+          libssl-dev libreadline-dev libffi-dev curl \
+          autoconf automake libtool pkg-config ccache
         pip install --upgrade pip
         pip install buildozer cython
 
-    # 💾 आपका पसंदीदा फीचर: अगर spec फाइल नहीं है तो बनाकर उसे तुरंत गिटहब पर सेव करो
+    # 💾 आपका पसंदीदा फीचर: अगर spec फाइल नहीं है तो बनाकर गिटहब पर ऑटो-पुश करो
     - name: Initialize Buildozer Spec (if missing)
       run: |
         if [ ! -f "buildozer.spec" ]; then
           buildozer init
           
-          # गिटहब बॉट सेटअप करके फाइल को वापस रिपॉजिटरी में पुश करना
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add buildozer.spec
@@ -52,13 +51,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # 📱 यहाँ 'yes |' जोड़ा है ताकि सर्वर बिना किसी से पूछे ऑटोमैटिक Android SDK डाउनलोड कर ले
+    # 📱 बिल्डोजर को पूरी परमिशन और बिना रुकावट के चलाने के लिए कमांड सुधार
     - name: Build APK (Debug Mode)
       run: |
-        yes | buildozer android debug
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: PythonApp-Debug-APK
-        path: bin/*.apk
+        buildozer android debug
