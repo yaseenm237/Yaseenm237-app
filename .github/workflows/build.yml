@@ -34,17 +34,18 @@ jobs:
       run: |
         npm run build
 
-    - name: Sync Web Code with Capacitor Android
+    # 🛠️ यहाँ sync की जगह update लगाया है ताकि सारी डिपेंडेंसी ताज़ा हो जाएं
+    - name: Update Capacitor Android Dependencies
       run: |
-        npx cap sync android
+        npx cap update android
 
+    # 🛠️ यहाँ पहले 'clean' कमांड जोड़ा है, फिर 'assembleDebug' और साथ में '--stacktrace'
     - name: Compile Android Studio Project (Debug APK)
       run: |
-        cd android && ./gradlew assembleDebug
+        cd android && ./gradlew clean assembleDebug --stacktrace
 
-    # 🛠️ अगर बिल्ड फेल होता है, तो यह कमांड छिपी हुई रिपोर्ट का पूरा सच सीधे स्क्रीन पर छाप देगा
-    - name: Print Gradle Error Report on Screen (If Failed)
-      if: failure()
-      run: |
-        echo "=== GRAPLE PROBLEM REPORT ==="
-        cat android/build/reports/problems/problems-report.html || echo "Report file not found"
+    - name: Upload Finished APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Smart-Carpentry-Optimizer-APK
+        path: android/app/build/outputs/apk/debug/app-debug.apk
