@@ -96,6 +96,48 @@ export default function LayoutVisualizerPanel({
   const [showRuler, setShowRuler] = useState(true);
   const [showGrandSummary, setShowGrandSummary] = useState(false);
   const [showCutSequence, setShowCutSequence] = useState(false);
+  const [fullScreenSheet, setFullScreenSheet] = useState<SheetLayout | null>(null);
+  const [fullScreenPan, setFullScreenPan] = useState({ x: 0, y: 0 });
+  const [fullScreenZoom, setFullScreenZoom] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  const touchStateRef = React.useRef<{
+    initialDist: number;
+    initialZoom: number;
+    initialPan: { x: number; y: number };
+    initialCenter: { x: number; y: number };
+  }>({
+    initialDist: 0,
+    initialZoom: 1,
+    initialPan: { x: 0, y: 0 },
+    initialCenter: { x: 0, y: 0 }
+  });
+
+  const mainTouchStateRef = React.useRef<{
+    initialDist: number;
+    initialZoom: number;
+  }>({
+    initialDist: 0,
+    initialZoom: 100
+  });
+
+  // Reset pan/zoom when modal opens
+  React.useEffect(() => {
+    if (fullScreenSheet) {
+      setFullScreenZoom(1);
+      setFullScreenPan({ x: 0, y: 0 });
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [fullScreenSheet]);
+
+  const handleFullScreenWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const scaleAmount = -e.deltaY * 0.005;
+    setFullScreenZoom(prev => Math.min(Math.max(0.5, prev + scaleAmount), 5));
+  };
 
   const S_L = settings.sheetL;
   const S_W = settings.sheetW;
@@ -298,7 +340,7 @@ export default function LayoutVisualizerPanel({
   return (
     <div id="visualizer-panel" className="flex flex-col gap-6">
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
         {/* Efficiency */}
         <div className="bg-indigo-900 text-white rounded-2xl p-6 shadow-md shadow-indigo-100 flex flex-col justify-between h-full group hover:scale-[1.01] transition-transform duration-200">
           <div>
@@ -370,25 +412,6 @@ export default function LayoutVisualizerPanel({
             <span className="w-2 h-2 rounded-full bg-indigo-500" />
             <span className="text-[10px] text-slate-500 font-semibold">
               {isHindi ? 'लागत आकलन हेतु सहायक' : 'Helps in banding estimation'}
-            </span>
-          </div>
-        </div>
-
-        {/* Estimated Material Cost */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm flex flex-col justify-between h-full group hover:scale-[1.01] transition-transform duration-200">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-              {isHindi ? 'कुल सामग्री लागत' : 'Material Cost'}
-            </p>
-            <h3 className="text-3xl font-light text-slate-900 mt-4 tracking-tight">
-              <span className="text-xl text-slate-400 font-bold mr-0.5">{isHindi ? '₹' : '$'}</span>
-              {(totalSheetsUsed * (settings.sheetCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-            </h3>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-600" />
-            <span className="text-[10px] text-slate-500 font-semibold">
-              {isHindi ? `${settings.sheetCost || 0}/शीट के हिसाब से` : `@ ${isHindi ? '₹' : '$'}${settings.sheetCost || 0} per sheet`}
             </span>
           </div>
         </div>
@@ -530,7 +553,7 @@ export default function LayoutVisualizerPanel({
           const displayW = convertMmToUnit(rawWMm, unit);
 
           // Margins inside SVG
-          const pad = 30;
+          const pad = 45;
           const svgW = rawLMm + 2 * pad;
           const svgH = rawWMm + 2 * pad;
 
@@ -692,19 +715,47 @@ export default function LayoutVisualizerPanel({
                   </div>
                 )}
 
-                <div className="w-full max-w-4xl bg-slate-900 shadow-inner rounded-lg p-3 border-4 border-slate-800 overflow-auto select-none">
+                <div 
+                  className="w-full max-w-4xl bg-slate-900 shadow-inner rounded-lg p-3 border-4 border-slate-800 overflow-auto select-none"
+                  onTouchStart={(e) => {
+                    if (e.touches.length === 2) {
+                      const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                      );
+                      mainTouchStateRef.current.initialDist = dist;
+                      mainTouchStateRef.current.initialZoom = zoom;
+                    }
+                  }}
+                  onTouchMove={(e) => {
+                    if (e.touches.length === 2) {
+                      const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                      );
+                      const scale = dist / mainTouchStateRef.current.initialDist;
+                      const newZoom = Math.min(Math.max(50, mainTouchStateRef.current.initialZoom * scale), 400);
+                      setZoom(newZoom);
+                    }
+                  }}
+                >
                   <div 
                     style={{ 
                       width: `${zoom}%`, 
                       minWidth: '100%',
                       maxWidth: zoom > 100 ? 'none' : '100%',
                     }} 
-                    className="transition-all duration-200 origin-top-left"
+                    className="transition-all duration-75 origin-top-left"
                   >
                     <svg 
                       viewBox={`0 0 ${svgW} ${svgH}`} 
-                      className={`w-full h-auto max-h-[600px] ${editingSheetIndex === layout.sheetIndex ? 'cursor-move touch-none' : ''}`}
+                      className={`w-full h-auto max-h-[600px] ${editingSheetIndex === layout.sheetIndex ? 'cursor-move touch-none' : 'cursor-zoom-in'}`}
                       xmlns="http://www.w3.org/2000/svg"
+                      onDoubleClick={() => {
+                        if (editingSheetIndex !== layout.sheetIndex) {
+                          setFullScreenSheet(layout);
+                        }
+                      }}
                       onMouseMove={(e) => {
                         if (editingSheetIndex === layout.sheetIndex) {
                           handleSvgMouseMove(e, layout.width, layout.height, svgW, svgH);
@@ -838,7 +889,7 @@ export default function LayoutVisualizerPanel({
                       );
                     })()}
 
-                    {/* Outer Scale Rulers */}
+                    {/* Scale Rulers */}
                     {showRuler && (() => {
                       const ticks = [];
                       
@@ -921,12 +972,13 @@ export default function LayoutVisualizerPanel({
                             <text
                               key={`tick-h-txt-${i}`}
                               x={xPos}
-                              y={pad - 18}
+                              y={pad - 22}
                               textAnchor="middle"
-                              fill="#f8fafc"
-                              fontSize="8"
+                              dominantBaseline="middle"
+                              fill="#cbd5e1"
+                              fontSize="10"
                               fontWeight="bold"
-                              className="select-none pointer-events-none"
+                              className="select-none pointer-events-none drop-shadow-md"
                             >
                               {labelText}
                             </text>
@@ -978,13 +1030,14 @@ export default function LayoutVisualizerPanel({
                           ticks.push(
                             <text
                               key={`tick-v-txt-${i}`}
-                              x={pad - 18}
-                              y={yPos + 3}
+                              x={pad - 20}
+                              y={yPos}
                               textAnchor="end"
-                              fill="#f8fafc"
-                              fontSize="8"
+                              dominantBaseline="middle"
+                              fill="#cbd5e1"
+                              fontSize="10"
                               fontWeight="bold"
-                              className="select-none pointer-events-none"
+                              className="select-none pointer-events-none drop-shadow-md"
                             >
                               {labelText}
                             </text>
@@ -1625,6 +1678,324 @@ export default function LayoutVisualizerPanel({
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Full Screen Zoom Modal */}
+      {fullScreenSheet && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/95 flex flex-col">
+          <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800 text-slate-100 shadow-xl z-10">
+            <div>
+              <h3 className="font-bold text-lg">
+                {isHindi ? `शीट ${fullScreenSheet.sheetIndex + 1} (${fullScreenSheet.stockItem?.name || 'Standard'})` : `Sheet ${fullScreenSheet.sheetIndex + 1} (${fullScreenSheet.stockItem?.name || 'Standard'})`}
+              </h3>
+              <p className="text-sm text-slate-400">
+                {isHindi ? 'ज़ूम करने के लिए पिंच करें या माउस व्हील का उपयोग करें। खिसकाने के लिए ड्रैग करें।' : 'Pinch or use mouse wheel to zoom. Drag to pan.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="bg-slate-800 rounded-lg flex items-center p-1 border border-slate-700">
+                <button 
+                  onClick={() => setFullScreenZoom(prev => Math.max(0.5, prev - 0.2))}
+                  className="p-2 hover:bg-slate-700 rounded-md transition-colors"
+                >
+                  <ZoomOut size={20} />
+                </button>
+                <span className="px-3 font-mono text-sm">{Math.round(fullScreenZoom * 100)}%</span>
+                <button 
+                  onClick={() => setFullScreenZoom(prev => Math.min(5, prev + 0.2))}
+                  className="p-2 hover:bg-slate-700 rounded-md transition-colors"
+                >
+                  <ZoomIn size={20} />
+                </button>
+              </div>
+              <button 
+                onClick={() => setFullScreenSheet(null)}
+                className="p-3 bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition-colors ml-2"
+              >
+                <X size={24} />
+              </button>
+            </div>
+          </div>
+          <div 
+            className="flex-1 overflow-hidden relative cursor-grab active:cursor-grabbing flex items-center justify-center touch-none"
+            onWheel={handleFullScreenWheel}
+            onMouseDown={(e) => {
+              setIsPanning(true);
+              setPanStart({ x: e.clientX - fullScreenPan.x, y: e.clientY - fullScreenPan.y });
+            }}
+            onMouseMove={(e) => {
+              if (isPanning) {
+                setFullScreenPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
+              }
+            }}
+            onMouseUp={() => setIsPanning(false)}
+            onMouseLeave={() => setIsPanning(false)}
+            onTouchStart={(e) => {
+              if (e.touches.length === 1) {
+                setIsPanning(true);
+                setPanStart({ x: e.touches[0].clientX - fullScreenPan.x, y: e.touches[0].clientY - fullScreenPan.y });
+              } else if (e.touches.length === 2) {
+                setIsPanning(true);
+                const dist = Math.hypot(
+                  e.touches[0].clientX - e.touches[1].clientX,
+                  e.touches[0].clientY - e.touches[1].clientY
+                );
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                
+                touchStateRef.current = {
+                  initialDist: dist,
+                  initialZoom: fullScreenZoom,
+                  initialCenter: { x: centerX, y: centerY },
+                  initialPan: { ...fullScreenPan }
+                };
+              }
+            }}
+            onTouchMove={(e) => {
+              if (e.touches.length === 1 && isPanning) {
+                setFullScreenPan({ x: e.touches[0].clientX - panStart.x, y: e.touches[0].clientY - panStart.y });
+              } else if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                  e.touches[0].clientX - e.touches[1].clientX,
+                  e.touches[0].clientY - e.touches[1].clientY
+                );
+                const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                
+                const scale = dist / touchStateRef.current.initialDist;
+                const newZoom = Math.min(Math.max(0.5, touchStateRef.current.initialZoom * scale), 5);
+                
+                // Pan offset from pinch center movement
+                const deltaX = centerX - touchStateRef.current.initialCenter.x;
+                const deltaY = centerY - touchStateRef.current.initialCenter.y;
+                
+                setFullScreenZoom(newZoom);
+                setFullScreenPan({
+                  x: touchStateRef.current.initialPan.x + deltaX,
+                  y: touchStateRef.current.initialPan.y + deltaY
+                });
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (e.touches.length === 0) {
+                setIsPanning(false);
+              } else if (e.touches.length === 1) {
+                // Resume 1-finger panning from current position without jump
+                setPanStart({ x: e.touches[0].clientX - fullScreenPan.x, y: e.touches[0].clientY - fullScreenPan.y });
+              }
+            }}
+          >
+            <div 
+              style={{
+                transform: `translate(${fullScreenPan.x}px, ${fullScreenPan.y}px) scale(${fullScreenZoom})`,
+                transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+                width: '90vmin',
+                height: 'auto'
+              }}
+              className="origin-center shadow-2xl"
+            >
+              {(() => {
+                const sheetW = fullScreenSheet.width;
+                const sheetH = fullScreenSheet.height;
+                const pad = 45;
+                const rawLMm = convertToMm(sheetW, unit);
+                const rawWMm = convertToMm(sheetH, unit);
+                const svgW = rawLMm + pad * 2;
+                const svgH = rawWMm + pad * 2;
+                
+                return (
+                  <svg 
+                    viewBox={`0 0 ${svgW} ${svgH}`} 
+                    className="w-full h-auto bg-slate-900 border-4 border-slate-700 rounded-lg pointer-events-none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    {/* Definitions for textures/patterns */}
+                    <defs>
+                      <pattern id="zoom-wood-grain" width="100" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M0 10 Q 25 5, 50 10 T 100 10" fill="none" stroke="#fef3c7" strokeWidth="0.8" opacity="0.3" />
+                        <path d="M0 15 Q 25 12, 50 15 T 100 15" fill="none" stroke="#fef3c7" strokeWidth="0.5" opacity="0.15" />
+                      </pattern>
+                      <pattern id="zoom-kerf-pattern" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <rect width="2" height="6" fill="#f8fafc" />
+                      </pattern>
+                      <pattern id="zoom-waste-stripe" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <rect width="2" height="8" fill="#f1f5f9" />
+                        <rect x="2" width="6" height="8" fill="#ffffff" />
+                      </pattern>
+                    </defs>
+
+                    <rect x={pad} y={pad} width={rawLMm} height={rawWMm} fill="#f3f4f6" stroke="#cbd5e1" strokeWidth="2" rx="3" />
+                    <rect x={pad} y={pad} width={rawLMm} height={rawWMm} fill="url(#zoom-wood-grain)" rx="3" />
+                    <rect x={pad + T} y={pad + T} width={rawLMm - 2 * T} height={rawWMm - 2 * T} fill="none" stroke="#ef4444" strokeWidth="1" strokeDasharray="5,5" />
+
+                    {/* Grid Overlay */}
+                    {showGrid && (() => {
+                      const gridSpacingMm = unit === 'Inch' ? 6 * 25.4 : unit === 'CM' ? 10 * 10 : 100;
+                      
+                      const verticalLines = [];
+                      const horizontalLines = [];
+                      
+                      for (let xMm = gridSpacingMm; xMm < rawLMm; xMm += gridSpacingMm) {
+                        const xPos = pad + xMm;
+                        const labelValue = Math.round(xMm / (unit === 'Inch' ? 25.4 : unit === 'CM' ? 10 : 1));
+                        const labelText = unit === 'Inch' ? `${labelValue}"` : `${labelValue}`;
+                        
+                        verticalLines.push(
+                          <g key={`grid-v-${xMm}`} className="opacity-40">
+                            <line x1={xPos} y1={pad} x2={xPos} y2={pad + rawWMm} stroke="#cbd5e1" strokeWidth="0.8" strokeDasharray="3,4" />
+                            <text x={xPos + 2} y={pad + 8} textAnchor="start" fill="#94a3b8" fontSize="7" fontWeight="bold" className="select-none pointer-events-none">{labelText}</text>
+                          </g>
+                        );
+                      }
+                      
+                      for (let yMm = gridSpacingMm; yMm < rawWMm; yMm += gridSpacingMm) {
+                        const yPos = pad + yMm;
+                        const labelValue = Math.round(yMm / (unit === 'Inch' ? 25.4 : unit === 'CM' ? 10 : 1));
+                        const labelText = unit === 'Inch' ? `${labelValue}"` : `${labelValue}`;
+                        
+                        horizontalLines.push(
+                          <g key={`grid-h-${yMm}`} className="opacity-40">
+                            <line x1={pad} y1={yPos} x2={pad + rawLMm} y2={yPos} stroke="#cbd5e1" strokeWidth="0.8" strokeDasharray="3,4" />
+                            <text x={pad + 4} y={yPos + 2.5} textAnchor="start" fill="#94a3b8" fontSize="7" fontWeight="bold" className="select-none pointer-events-none">{labelText}</text>
+                          </g>
+                        );
+                      }
+                      
+                      return (
+                        <g id={`sheet-grid-overlay-zoom`}>
+                          {verticalLines}
+                          {horizontalLines}
+                        </g>
+                      );
+                    })()}
+
+                    {/* Ruler overlay */}
+                    {showRuler && (() => {
+                      const ticks = [];
+                      let minorStepMm = 25.4;
+                      if (unit === 'CM') minorStepMm = 10;
+                      else if (unit === 'MM') minorStepMm = 10;
+                      
+                      ticks.push(
+                        <line key="ruler-h-base" x1={pad} y1={pad - 5} x2={pad + rawLMm} y2={pad - 5} stroke="#475569" strokeWidth="1.5" />
+                      );
+                      ticks.push(
+                        <line key="ruler-v-base" x1={pad - 5} y1={pad} x2={pad - 5} y2={pad + rawWMm} stroke="#475569" strokeWidth="1.5" />
+                      );
+                      
+                      const steps = Math.round(rawLMm / minorStepMm);
+                      for (let i = 0; i <= steps; i++) {
+                        const mm = i * minorStepMm;
+                        const xPos = pad + mm;
+                        if (xPos > pad + rawLMm + 0.1) continue;
+                        
+                        let isMajor = false, isMedium = false, val = i;
+                        if (unit === 'Inch') { isMajor = i % 12 === 0; isMedium = !isMajor && i % 6 === 0; }
+                        else if (unit === 'CM' || unit === 'MM') { isMajor = i % 10 === 0; isMedium = !isMajor && i % 5 === 0; if (unit === 'MM') val = i * 10; }
+                        
+                        let tickLen = isMajor ? 10 : isMedium ? 6 : 4;
+                        ticks.push(<line key={`tick-h-${i}`} x1={xPos} y1={pad - 5 - tickLen} x2={xPos} y2={pad - 5} stroke="#94a3b8" strokeWidth={isMajor ? "1.2" : "0.8"} />);
+                        
+                        if (isMajor) {
+                          const labelText = unit === 'Inch' ? `${val}"` : `${val}`;
+                          ticks.push(<text key={`tick-h-txt-${i}`} x={xPos} y={pad - 22} textAnchor="middle" dominantBaseline="middle" fill="#cbd5e1" fontSize="10" fontWeight="bold">{labelText}</text>);
+                        }
+                      }
+                      
+                      const vSteps = Math.round(rawWMm / minorStepMm);
+                      for (let i = 0; i <= vSteps; i++) {
+                        const mm = i * minorStepMm;
+                        const yPos = pad + mm;
+                        if (yPos > pad + rawWMm + 0.1) continue;
+                        
+                        let isMajor = false, isMedium = false, val = i;
+                        if (unit === 'Inch') { isMajor = i % 12 === 0; isMedium = !isMajor && i % 6 === 0; }
+                        else if (unit === 'CM' || unit === 'MM') { isMajor = i % 10 === 0; isMedium = !isMajor && i % 5 === 0; if (unit === 'MM') val = i * 10; }
+                        
+                        let tickLen = isMajor ? 10 : isMedium ? 6 : 4;
+                        ticks.push(<line key={`tick-v-${i}`} x1={pad - 5 - tickLen} y1={yPos} x2={pad - 5} y2={yPos} stroke="#94a3b8" strokeWidth={isMajor ? "1.2" : "0.8"} />);
+                        
+                        if (isMajor) {
+                          const labelText = unit === 'Inch' ? `${val}"` : `${val}`;
+                          ticks.push(<text key={`tick-v-txt-${i}`} x={pad - 20} y={yPos} textAnchor="end" dominantBaseline="middle" fill="#cbd5e1" fontSize="10" fontWeight="bold">{labelText}</text>);
+                        }
+                      }
+                      
+                      return <g id={`scale-rulers-zoom`}>{ticks}</g>;
+                    })()}
+
+                    {/* Measurement lines (rulers) around the sheet */}
+                    <line x1={rawLMm + pad + 10} y1={pad} x2={rawLMm + pad + 10} y2={rawWMm + pad} stroke="#cbd5e1" strokeWidth="2" />
+                    <line x1={rawLMm + pad + 5} y1={pad} x2={rawLMm + pad + 15} y2={pad} stroke="#cbd5e1" strokeWidth="2" />
+                    <line x1={rawLMm + pad + 5} y1={rawWMm + pad} x2={rawLMm + pad + 15} y2={rawWMm + pad} stroke="#cbd5e1" strokeWidth="2" />
+                    <text x={rawLMm + pad + 25} y={pad + rawWMm / 2} textAnchor="middle" transform={`rotate(-90 ${rawLMm + pad + 25} ${pad + rawWMm / 2})`} fill="#64748b" fontSize="16" fontWeight="bold">
+                      {S_W} {unit}
+                    </text>
+
+                    <line x1={pad} y1={rawWMm + pad + 10} x2={rawLMm + pad} y2={rawWMm + pad + 10} stroke="#cbd5e1" strokeWidth="2" />
+                    <line x1={pad} y1={rawWMm + pad + 5} x2={pad} y2={rawWMm + pad + 15} stroke="#cbd5e1" strokeWidth="2" />
+                    <line x1={rawLMm + pad} y1={rawWMm + pad + 5} x2={rawLMm + pad} y2={rawWMm + pad + 15} stroke="#cbd5e1" strokeWidth="2" />
+                    <text x={pad + rawLMm / 2} y={rawWMm + pad + 30} textAnchor="middle" fill="#64748b" fontSize="16" fontWeight="bold">
+                      {S_L} {unit}
+                    </text>
+
+                    {/* Parts */}
+                    {fullScreenSheet.parts.map((p, idx) => {
+                      const xMm = convertToMm(p.x, unit) + pad;
+                      const yMm = convertToMm(p.y, unit) + pad;
+                      const wMm = convertToMm(p.w, unit);
+                      const hMm = convertToMm(p.h, unit);
+                      const fillColor = getPartColor(p.name, idx);
+
+                      return (
+                        <g key={p.id}>
+                          {wMm > 0 && hMm > 0 && (
+                            <>
+                              {/* Kerf Shadow */}
+                              <rect x={xMm + wMm} y={yMm} width={K} height={hMm} fill="url(#zoom-kerf-pattern)" opacity="0.8" />
+                              <rect x={xMm} y={yMm + hMm} width={wMm + K} height={K} fill="url(#zoom-kerf-pattern)" opacity="0.8" />
+                            </>
+                          )}
+                          <rect x={xMm} y={yMm} width={Math.max(0.1, wMm)} height={Math.max(0.1, hMm)} fill={fillColor} stroke="#334155" strokeWidth="1.5" />
+                          
+                          {/* Cut sequence number */}
+                          {showCutSequence && (
+                            <circle cx={xMm + 12} cy={yMm + 12} r="8" fill="#1e293b" />
+                          )}
+                          {showCutSequence && (
+                            <text x={xMm + 12} y={yMm + 12} textAnchor="middle" dominantBaseline="central" fill="white" className="text-[10px] font-bold font-mono">
+                              {idx + 1}
+                            </text>
+                          )}
+
+                          {/* Edge Banding Markers */}
+                          {p.edges.T && <line x1={xMm} y1={yMm} x2={xMm + wMm} y2={yMm} stroke="#ef4444" strokeWidth="4" />}
+                          {p.edges.B && <line x1={xMm} y1={yMm + hMm} x2={xMm + wMm} y2={yMm + hMm} stroke="#ef4444" strokeWidth="4" />}
+                          {p.edges.L && <line x1={xMm} y1={yMm} x2={xMm} y2={yMm + hMm} stroke="#ef4444" strokeWidth="4" />}
+                          {p.edges.R && <line x1={xMm + wMm} y1={yMm} x2={xMm + wMm} y2={yMm + hMm} stroke="#ef4444" strokeWidth="4" />}
+
+                          {/* Text labels */}
+                          {wMm > 30 && hMm > 20 && (
+                            <>
+                              <text x={xMm + wMm / 2} y={yMm + hMm / 2 - (hMm > 40 ? 6 : 0)} textAnchor="middle" dominantBaseline="middle" className="text-[16px] font-bold fill-slate-900 pointer-events-none drop-shadow-sm">
+                                {p.name}
+                              </text>
+                              {hMm > 40 && (
+                                <text x={xMm + wMm / 2} y={yMm + hMm / 2 + 10} textAnchor="middle" dominantBaseline="middle" className="text-[12px] font-mono fill-slate-700 pointer-events-none drop-shadow-sm">
+                                  {formatDim(wMm)} × {formatDim(hMm)}
+                                </text>
+                              )}
+                            </>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       )}
     </div>

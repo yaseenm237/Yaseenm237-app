@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PartInput, Language, Grain, Edges, SheetSettings } from '../types';
 import { CARPENTRY_PRESETS } from '../utils/presets';
 import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle, X } from 'lucide-react';
@@ -35,6 +35,18 @@ export default function CuttingListPanel({
   const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append');
   const hasMultiMaterials = (settings.stockItems?.length || 0) > 1;
   const hasEdgeMaterials = (settings.edgeBandItems?.length || 0) > 0;
+
+  // Lock body scroll when paste modal is open
+  useEffect(() => {
+    if (isPasteModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isPasteModalOpen]);
 
   // Smart spreadsheet rows parser
   const parsePastedData = (text: string): PartInput[] => {

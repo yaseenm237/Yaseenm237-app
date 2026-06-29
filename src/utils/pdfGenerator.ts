@@ -301,9 +301,25 @@ export function generatePdfReport(
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
 
-  parts.forEach((part, index) => {
-    if (part.quantity <= 0) return;
+  // Group parts by identical properties
+  const groupedGlobalParts = new Map<string, typeof parts[0] & { totalQty: number, displayNames: Set<string> }>();
+  parts.forEach(p => {
+    if (p.quantity <= 0) return;
+    const matName = p.materialId ? (settings.stockItems?.find(s => s.id === p.materialId)?.name || 'Default') : 'Default';
+    
+    // Create a key based on identical properties, ignoring names for grouping if everything else is identical
+    const edgesKey = [p.edges.T, p.edges.B, p.edges.L, p.edges.R].join('-');
+    const key = `${p.length}x${p.width}_${p.grain}_${matName}_${edgesKey}`;
+    
+    if (!groupedGlobalParts.has(key)) {
+      groupedGlobalParts.set(key, { ...p, totalQty: 0, displayNames: new Set() });
+    }
+    const group = groupedGlobalParts.get(key)!;
+    group.totalQty += p.quantity;
+    group.displayNames.add(p.name || 'Part');
+  });
 
+  Array.from(groupedGlobalParts.values()).forEach((part, index) => {
     // Zebra striping
     if (index % 2 === 0) {
       doc.setFillColor(250, 250, 250);
@@ -313,7 +329,9 @@ export function generatePdfReport(
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
     // Sanitize part names to cleanly translate and remove Devanagari characters
-    doc.text(sanitizeText(part.name || `Part #${index + 1}`), margin + 4, y + 4.5);
+    const names = Array.from(part.displayNames).map(sanitizeText).join(', ');
+    const displayName = names.length > 25 ? names.substring(0, 22) + '...' : names;
+    doc.text(displayName, margin + 4, y + 4.5);
 
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
@@ -327,7 +345,7 @@ export function generatePdfReport(
       doc.text(sanitizeText(matName), margin + 45, y + 4.5);
     }
 
-    doc.text(`${part.quantity}`, margin + 70, y + 4.5);
+    doc.text(`${part.totalQty}`, margin + 70, y + 4.5);
     doc.text(`${part.length} x ${part.width} ${settings.unit}`, margin + 85, y + 4.5);
 
     // Grain - Standard labels without unicode rendering issues
@@ -598,7 +616,7 @@ export function generatePdfReport(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(15, 23, 42);
-    doc.text(isHindi ? "इस शीट पर पैक किए गए पुर्जे" : "Parts Nesting Coordinates on This Sheet", margin, sy);
+    doc.text(isHindi ? "इस शीट पर पैक किए गए पुर्जे" : "Parts Nesting Summary on This Sheet", margin, sy);
     sy += 4.5;
 
     doc.setDrawColor(241, 245, 249);
@@ -613,8 +631,8 @@ export function generatePdfReport(
     doc.setFontSize(7);
     doc.setTextColor(100, 116, 139);
     doc.text("PART ID / NAME", margin + 3, sy + 3.8);
-    doc.text("COORDINATES (X, Y)", margin + 65, sy + 3.8);
-    doc.text("FINISHED SIZE", margin + 105, sy + 3.8);
+    doc.text("QTY", margin + 65, sy + 3.8);
+    doc.text("FINISHED SIZE", margin + 95, sy + 3.8);
     doc.text("ACTUAL CUT SIZE (SAW)", margin + 140, sy + 3.8);
 
     sy += 5.5;
@@ -623,7 +641,18 @@ export function generatePdfReport(
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
 
-    layout.parts.forEach((part, partIdx) => {
+    // Group identical parts by name and dimensions to save space
+    const groupedParts = new Map<string, { qty: number, name: string, origL: number, origW: number, cutL: number, cutW: number }>();
+    layout.parts.forEach(p => {
+      const key = `${p.name}_${p.origL}_${p.origW}_${p.cutL}_${p.cutW}`;
+      if (!groupedParts.has(key)) {
+        groupedParts.set(key, { qty: 0, name: p.name, origL: p.origL, origW: p.origW, cutL: p.cutL, cutW: p.cutW });
+      }
+      groupedParts.get(key)!.qty++;
+    });
+
+    let partIdx = 0;
+    groupedParts.forEach((part) => {
       if (partIdx % 2 === 1) {
         doc.setFillColor(252, 252, 252);
         doc.rect(margin, sy, contentWidth, 5.5, 'F');
@@ -631,18 +660,15 @@ export function generatePdfReport(
 
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(15, 23, 42);
-      // Clean up part name in coordinates table
-      doc.text(sanitizeText(part.name || `Part #${partIdx + 1}`), margin + 3, sy + 3.8);
+      doc.text(sanitizeText(part.name || `Part`), margin + 3, sy + 3.8);
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(71, 85, 105);
-      // Coordinate conversions
-      const xVal = formatDim(part.x, settings.unit);
-      const yVal = formatDim(part.y, settings.unit);
-      doc.text(`X=${xVal}, Y=${yVal}`, margin + 65, sy + 3.8);
+      
+      doc.text(`${part.qty}`, margin + 65, sy + 3.8);
 
       // Finished size
-      doc.text(`${formatDim(part.origL, settings.unit)} x ${formatDim(part.origW, settings.unit)}`, margin + 105, sy + 3.8);
+      doc.text(`${formatDim(part.origL, settings.unit)} x ${formatDim(part.origW, settings.unit)}`, margin + 95, sy + 3.8);
 
       // Cut size
       doc.setFont('helvetica', 'bold');
@@ -653,6 +679,7 @@ export function generatePdfReport(
       doc.setTextColor(71, 85, 105);
 
       sy += 5.5;
+      partIdx++;
     });
 
     // List ALL waste pieces for completeness
