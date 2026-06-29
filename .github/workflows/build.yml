@@ -34,12 +34,12 @@ jobs:
       run: |
         npm run build
 
-    # 🛠️ यहाँ sync की जगह update लगाया है ताकि सारी डिपेंडेंसी ताज़ा हो जाएं
-    - name: Update Capacitor Android Dependencies
+    # 🔄 वेब फाइलों को कॉपी करने और प्लगइन्स को सिंक करने के लिए वापस 'sync' लगा दिया है
+    - name: Sync Web Code with Capacitor Android
       run: |
-        npx cap update android
+        npx cap sync android
 
-    # 🛠️ यहाँ पहले 'clean' कमांड जोड़ा है, फिर 'assembleDebug' और साथ में '--stacktrace'
+    # 🤖 ग्रैडल को पहले 'clean' किया, ताकि पुराना कचरा और डिपेंडेंसी एरर खत्म हो जाए
     - name: Compile Android Studio Project (Debug APK)
       run: |
         cd android && ./gradlew clean assembleDebug --stacktrace
