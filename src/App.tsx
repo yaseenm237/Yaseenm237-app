@@ -289,6 +289,9 @@ export default function App() {
   const setParts = (updater: PartInput[] | ((prev: PartInput[]) => PartInput[])) => {
     setWorkspaceState((curr) => {
       const nextParts = typeof updater === 'function' ? updater(curr.parts) : updater;
+      if (nextParts.length === 0) {
+        setActiveJobId(null);
+      }
       return {
         ...curr,
         parts: nextParts
@@ -374,6 +377,7 @@ export default function App() {
   const [isCalcOpen, setIsCalcOpen] = useState<boolean>(false);
   const [isSavedFilesOpen, setIsSavedFilesOpen] = useState<boolean>(false);
   const [savedJobs, setSavedJobs] = useLocalStorage<SavedJob[]>('carpentry_saved_jobs', []);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isFirstMount = useRef(true);
   const skipAutosaveToast = useRef(false);
@@ -534,6 +538,24 @@ export default function App() {
       unplacedParts: []
     });
     setCompareResults(null);
+    setActiveJobId(null);
+  };
+
+  const handleUpdateJobSettings = (jobId: string, updatedSettings: SheetSettings) => {
+    setSavedJobs(prev => prev.map(job => {
+      if (job.id === jobId) {
+        return {
+          ...job,
+          settings: { ...updatedSettings }
+        };
+      }
+      return job;
+    }));
+    
+    // Also, if the updated job is the active job currently loaded, we should update the workspace settings in real time!
+    if (activeJobId === jobId) {
+      setSettings(updatedSettings);
+    }
   };
 
   // CSV Export trigger
@@ -885,6 +907,9 @@ export default function App() {
             onChange={setSettings}
             onClose={() => setIsSettingsOpen(false)}
             language={language}
+            savedJobs={savedJobs}
+            activeJobId={activeJobId}
+            onSaveToJob={handleUpdateJobSettings}
           />
         )}
 
@@ -1092,8 +1117,14 @@ export default function App() {
         isOpen={isSavedFilesOpen}
         onClose={() => setIsSavedFilesOpen(false)}
         savedJobs={savedJobs}
-        onDeleteJob={(id) => setSavedJobs(prev => prev.filter(j => j.id !== id))}
+        onDeleteJob={(id) => {
+          setSavedJobs(prev => prev.filter(j => j.id !== id));
+          if (activeJobId === id) {
+            setActiveJobId(null);
+          }
+        }}
         onLoadJob={(job) => {
+          setActiveJobId(job.id);
           setWorkspaceState({
             parts: job.parts,
             settings: job.settings

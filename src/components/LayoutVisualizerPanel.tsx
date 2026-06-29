@@ -355,8 +355,8 @@ export default function LayoutVisualizerPanel({
     for (const part of parts) {
       const pX = part.x + trim;
       const pY = part.y + trim;
-      const pW = part.rotated ? part.w : part.l;
-      const pH = part.rotated ? part.l : part.w;
+      const pW = part.w;
+      const pH = part.h;
       
       const startC = Math.floor(pX / cellW);
       const endC = Math.min(cols - 1, Math.floor((pX + pW) / cellW));

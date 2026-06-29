@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SheetSettings, StockItem, Language, Unit, EdgeBandItem } from '../types';
-import { X, Plus, Trash2, Save, Settings, Layers } from 'lucide-react';
+import { X, Plus, Trash2, Save, Settings, Layers, Database, CheckCircle, AlertCircle } from 'lucide-react';
+import { SavedJob } from './SavedFilesModal';
 
 interface SettingsModalProps {
   settings: SheetSettings;
   onChange: (settings: SheetSettings) => void;
   onClose: () => void;
   language: Language;
+  savedJobs?: SavedJob[];
+  activeJobId?: string | null;
+  onSaveToJob?: (jobId: string, updatedSettings: SheetSettings) => void;
 }
 
 const ALGORITHMS = [
@@ -18,11 +22,59 @@ const ALGORITHMS = [
   { key: 'MaxRectsBssf', labelEn: 'MaxRects BSSF (CNC Nesting / Dense)', labelHi: 'मैक्सरेक्ट्स BSSF (CNC राउटर / सघन)' }
 ];
 
-export default function SettingsModal({ settings, onChange, onClose, language }: SettingsModalProps) {
+export default function SettingsModal({
+  settings,
+  onChange,
+  onClose,
+  language,
+  savedJobs = [],
+  activeJobId = null,
+  onSaveToJob
+}: SettingsModalProps) {
   const isHindi = language === 'Hindi';
 
   // Local state for all settings
   const [localSettings, setLocalSettings] = useState<SheetSettings>(settings);
+
+  // States for job-specific settings save
+  const [selectedJobId, setSelectedJobId] = useState<string>(() => {
+    if (activeJobId && savedJobs.some(j => j.id === activeJobId)) {
+      return activeJobId;
+    }
+    return savedJobs.length > 0 ? savedJobs[0].id : '';
+  });
+  const [saveToJobStatus, setSaveToJobStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [saveToJobMessage, setSaveToJobMessage] = useState<string>('');
+
+  useEffect(() => {
+    if (activeJobId && savedJobs.some(j => j.id === activeJobId)) {
+      setSelectedJobId(activeJobId);
+    } else if (savedJobs.length > 0 && !selectedJobId) {
+      setSelectedJobId(savedJobs[0].id);
+    }
+  }, [activeJobId, savedJobs]);
+
+  const handleSaveToSpecificJob = (jobIdToSave: string) => {
+    if (!jobIdToSave) {
+      setSaveToJobStatus('error');
+      setSaveToJobMessage(isHindi ? 'कृपया एक वैध जॉब चुनें।' : 'Please select a valid job.');
+      return;
+    }
+    if (onSaveToJob) {
+      onSaveToJob(jobIdToSave, localSettings);
+      const targetJob = savedJobs.find(j => j.id === jobIdToSave);
+      setSaveToJobStatus('success');
+      setSaveToJobMessage(
+        isHindi
+          ? `सेटिंग्स '${targetJob?.name || 'जॉब'}' में सफलतापूर्वक सहेज दी गई हैं!`
+          : `Settings saved to job '${targetJob?.name || 'Job'}' successfully!`
+      );
+      setTimeout(() => {
+        setSaveToJobStatus('idle');
+        setSaveToJobMessage('');
+      }, 3000);
+    }
+  };
 
   // Fallback to default stock item if empty
   const stockItems = localSettings.stockItems?.length ? localSettings.stockItems : [
@@ -399,6 +451,70 @@ export default function SettingsModal({ settings, onChange, onClose, language }:
                 ))}
               </select>
             </div>
+          </section>
+
+          <hr className="border-slate-100" />
+
+          {/* Section: Job-Specific Settings */}
+          <section className="bg-indigo-50/40 p-5 rounded-2xl border border-indigo-100/80">
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Database size={16} className="text-indigo-600" />
+              {isHindi ? 'जॉब विशिष्ट सेटिंग्स (Job-Specific Settings)' : 'Job-Specific Settings'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              {isHindi
+                ? 'इस मटीरियल स्टॉक, एल्गोरिदम और मार्जिन प्राथमिकताओं को किसी विशिष्ट सुरक्षित प्रोजेक्ट/जॉब में स्थायी रूप से सहेजें।'
+                : 'Save these current material stocks, nesting algorithm, and margins directly to a specific saved job.'}
+            </p>
+
+            {savedJobs && savedJobs.length > 0 ? (
+              <div className="flex flex-col sm:flex-row gap-3 items-end">
+                <div className="flex-1 w-full">
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    {isHindi ? 'सुरक्षित जॉब चुनें' : 'Select Saved Job'}
+                  </label>
+                  <select
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(e.target.value)}
+                    className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
+                  >
+                    {savedJobs.map(job => (
+                      <option key={job.id} value={job.id}>
+                        {job.name} {activeJobId === job.id ? (isHindi ? ' (सक्रिय)' : ' (Loaded)') : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleSaveToSpecificJob(selectedJobId)}
+                  className="w-full sm:w-auto px-5 py-2.5 flex items-center justify-center gap-2 text-sm font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 active:scale-95 whitespace-nowrap cursor-pointer"
+                >
+                  <Save size={16} />
+                  {isHindi ? 'जॉब में सेटिंग्स सेव करें' : 'Save Settings'}
+                </button>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500 flex items-center gap-2 bg-slate-100/50 p-3 rounded-xl border border-slate-200">
+                <AlertCircle size={16} className="text-amber-500" />
+                <span>
+                  {isHindi
+                    ? 'कोई सहेजी गई फ़ाइल उपलब्ध नहीं है। सेटिंग्स सहेजने के लिए पहले मुख्य स्क्रीन पर प्रोजेक्ट का काम सेव करें।'
+                    : 'No saved jobs available. Please export/print a layout first to save a project, then you can customize its settings.'}
+                </span>
+              </div>
+            )}
+
+            {saveToJobStatus !== 'idle' && (
+              <div className={`mt-3 p-3 rounded-xl border flex items-center gap-2.5 text-xs font-medium ${
+                saveToJobStatus === 'success' 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                  : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}>
+                {saveToJobStatus === 'success' ? <CheckCircle size={16} className="text-emerald-600 flex-shrink-0" /> : <AlertCircle size={16} className="text-rose-600 flex-shrink-0" />}
+                <span>{saveToJobMessage}</span>
+              </div>
+            )}
           </section>
 
         </div>
