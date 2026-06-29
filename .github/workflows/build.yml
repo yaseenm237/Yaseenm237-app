@@ -23,6 +23,7 @@ jobs:
       with:
         python-version: '3.11'
 
+    # 🛠️ आपका आइडिया: यहाँ OpenJDK 17 को बिल्कुल फिक्स रखा गया है
     - name: Install Buildozer & System Dependencies
       run: |
         sudo apt-get update
@@ -30,30 +31,34 @@ jobs:
           python3-pip python3-setuptools python3-wheel \
           git zip unzip openjdk-17-jdk \
           zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
-          libssl-dev libreadline-dev libffi-dev curl autoconf libtool
+          libssl-dev libreadline-dev libffi-dev curl autoconf libtool pkg-config ccache
         pip install --upgrade pip
-        pip install buildozer cython
+        pip install "buildozer>=1.5.0" cython
 
+    # 💾 आपका पसंदीदा फीचर: अगर spec फाइल नहीं है तो बनाकर उसे तुरंत गिटहब पर सेव करो
     - name: Initialize Buildozer Spec (if missing)
       run: |
         if [ ! -f "buildozer.spec" ]; then
           buildozer init
+          
+          # ऑटोमैटिकली सिंगल आर्किटेक्चर (arm64-v8a) सेट करना ताकि एरर न आए
+          sed -i 's/android.archs = .*/android.archs = arm64-v8a/g' buildozer.spec
+          
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add buildozer.spec
-          git commit -m "Automated sync: Created buildozer.spec file [skip ci]"
+          git commit -m "Automated sync: Created buildozer.spec with single arch [skip ci]"
           git push origin main
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    # 📱 आपका आइडिया: गिटहब के प्री-इंस्टॉल्ड NDK को हटाकर सीधे सिंगल आर्किटेक्चर बिल्ड करना
     - name: Build APK (Debug Mode)
       run: |
         unset ANDROID_NDK_HOME
         unset ANDROID_NDK_ROOT
-        export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r28c
-        export ANDROID_NDK=$ANDROIDNDK
-        yes | buildozer android debug --arch=arm64-v8a
+        yes | buildozer android debug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
