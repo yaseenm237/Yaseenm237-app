@@ -110,13 +110,34 @@ fi
 # 4. Restoring gradle-wrapper.jar if missing or corrupted
 echo "📦 Step 4: Ensuring Gradle Wrapper is healthy..."
 JAR_PATH="android/gradle/wrapper/gradle-wrapper.jar"
+
+# Always force-restore gradle-wrapper.jar if it's currently invalid/corrupted
 if [ ! -f "$JAR_PATH" ] || [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -lt 10000 ]; then
-  echo "⚠️  gradle-wrapper.jar is missing, empty or corrupted! Restoring/downloading it..."
+  echo "⚠️  gradle-wrapper.jar is missing, empty or corrupted! Restoring it..."
   mkdir -p android/gradle/wrapper
-  curl -Lo "$JAR_PATH" "https://github.com/gradle/gradle/raw/v8.14.3/gradle/wrapper/gradle-wrapper.jar" || \
-  curl -Lo "$JAR_PATH" "https://github.com/gradle/gradle/raw/v8.5.0/gradle/wrapper/gradle-wrapper.jar" || \
-  curl -Lo "$JAR_PATH" "https://raw.githubusercontent.com/gradle/gradle/v8.5.0/gradle/wrapper/gradle-wrapper.jar"
-  echo "✅ Restored gradle-wrapper.jar!"
+  
+  # Try local extraction from Capacitor CLI assets first (highly reliable and offline-friendly)
+  if [ -f "node_modules/@capacitor/cli/assets/android-template.tar.gz" ]; then
+    echo "📦 Extracting gradle-wrapper.jar from local @capacitor/cli assets..."
+    TEMP_DIR=$(mktemp -d)
+    tar -xzf node_modules/@capacitor/cli/assets/android-template.tar.gz -C "$TEMP_DIR"
+    find "$TEMP_DIR" -name "gradle-wrapper.jar" -exec cp {} "$JAR_PATH" \;
+    rm -rf "$TEMP_DIR"
+  fi
+  
+  # Check if successfully restored locally, if not try downloading from standard repos
+  if [ ! -f "$JAR_PATH" ] || [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -lt 10000 ]; then
+    echo "🌐 Downloading gradle-wrapper.jar from official repositories..."
+    curl -Lo "$JAR_PATH" "https://github.com/android/sunflower/raw/main/gradle/wrapper/gradle-wrapper.jar" || \
+    curl -Lo "$JAR_PATH" "https://github.com/ionic-team/capacitor/raw/main/android/gradle/wrapper/gradle-wrapper.jar"
+  fi
+  
+  if [ -f "$JAR_PATH" ] && [ $(wc -c < "$JAR_PATH" 2>/dev/null || echo 0) -gt 10000 ]; then
+    echo "✅ Restored gradle-wrapper.jar successfully!"
+  else
+    echo "❌ Failed to restore gradle-wrapper.jar. Please delete the 'android' folder and run again."
+    exit 1
+  fi
 else
   echo "✅ gradle-wrapper.jar is healthy."
 fi
