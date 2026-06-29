@@ -28,21 +28,69 @@ fi
 # 3. Handle JDK Configuration to resolve "Unsupported class file major version 69"
 echo "☕ Step 3: Configuring JDK..."
 
-# Let's explicitly look for SDKMAN Java 17 first since we know it exists in your environment
-if [ -d "/usr/local/sdkman/candidates/java/17.0.10-tem" ]; then
-  export JAVA_HOME="/usr/local/sdkman/candidates/java/17.0.10-tem"
-elif [ -d "/home/vscode/.sdkman/candidates/java/17.0.10-tem" ]; then
-  export JAVA_HOME="/home/vscode/.sdkman/candidates/java/17.0.10-tem"
-elif [ -d "$HOME/.sdkman/candidates/java/17.0.10-tem" ]; then
-  export JAVA_HOME="$HOME/.sdkman/candidates/java/17.0.10-tem"
-elif [ -n "$JAVA_HOME" ]; then
-  echo "👉 Using existing JAVA_HOME from environment..."
-else
-  # Fallback to system java if found
-  export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+# Let's search for any valid Java installations
+echo "🔍 Searching for available JDKs..."
+CANDIDATES=()
+
+# 1. Add SDKMAN Java candidate directories if they exist
+if [ -d "/usr/local/sdkman/candidates/java" ]; then
+  for d in /usr/local/sdkman/candidates/java/*; do
+    if [ -d "$d" ]; then CANDIDATES+=("$d"); fi
+  done
+fi
+if [ -d "/home/vscode/.sdkman/candidates/java" ]; then
+  for d in /home/vscode/.sdkman/candidates/java/*; do
+    if [ -d "$d" ]; then CANDIDATES+=("$d"); fi
+  done
+fi
+if [ -d "$HOME/.sdkman/candidates/java" ]; then
+  for d in "$HOME/.sdkman/candidates/java"/*; do
+    if [ -d "$d" ]; then CANDIDATES+=("$d"); fi
+  done
 fi
 
-echo "👉 Selected JAVA_HOME: $JAVA_HOME"
+# 2. Add some specific common paths
+CANDIDATES+=(
+  "/usr/local/sdkman/candidates/java/17.0.10-tem"
+  "/usr/local/sdkman/candidates/java/current"
+  "/home/vscode/.sdkman/candidates/java/17.0.10-tem"
+  "/home/vscode/.sdkman/candidates/java/current"
+  "$HOME/.sdkman/candidates/java/17.0.10-tem"
+  "$HOME/.sdkman/candidates/java/current"
+)
+
+# 3. Add existing JAVA_HOME if set
+if [ -n "$JAVA_HOME" ]; then
+  CANDIDATES=("$JAVA_HOME" "${CANDIDATES[@]}")
+fi
+
+# 4. Add system java path
+SYS_JAVA=$(dirname $(dirname $(readlink -f $(which java 2>/dev/null) 2>/dev/null) 2>/dev/null) 2>/dev/null)
+if [ -n "$SYS_JAVA" ]; then
+  CANDIDATES+=("$SYS_JAVA")
+fi
+
+FOUND_JAVA=""
+for candidate in "${CANDIDATES[@]}"; do
+  if [ -d "$candidate" ] && [ -f "$candidate/bin/java" ]; then
+    # Specifically avoid the broken/incomplete /usr/lib/jvm/java-17-openjdk-amd64 if we have other options
+    if [ "$candidate" = "/usr/lib/jvm/java-17-openjdk-amd64" ] && [ ! -f "$candidate/bin/javac" ]; then
+      echo "⚠️  Skipping incomplete JDK: $candidate"
+      continue
+    fi
+    FOUND_JAVA="$candidate"
+    break
+  fi
+done
+
+if [ -n "$FOUND_JAVA" ]; then
+  export JAVA_HOME="$FOUND_JAVA"
+  echo "✅ Selected valid JAVA_HOME: $JAVA_HOME"
+else
+  echo "⚠️  Could not find a valid JDK containing bin/java, falling back to system default"
+  export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java 2>/dev/null) 2>/dev/null) 2>/dev/null) 2>/dev/null)
+fi
+
 export PATH="$JAVA_HOME/bin:$PATH"
 
 # Double check gradle.properties exists

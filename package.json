@@ -12,7 +12,7 @@
     "cap:add": "cap add android",
     "cap:sync": "vite build && cap sync",
     "cap:open": "cap open android",
-    "android:build": "vite build && cap sync && cd android && ./gradlew assembleDebug"
+    "android:build": "bash ./build-apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
