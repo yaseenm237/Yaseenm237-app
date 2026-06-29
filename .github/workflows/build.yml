@@ -34,11 +34,15 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # 🛠️ यहाँ सुधार किया है: कैपेसिटर CLI और कोर को पहले सही से इंस्टॉल कर रहे हैं
-    - name: Setup Capacitor CLI and Android Platform
+    # 🛠️ यहाँ सुधार किया: अगर JSON फाइल गायब है, तो उसे खुद नाम और ऐप आईडी देकर तुरंत बनाओ
+    - name: Setup Capacitor CLI and Configuration
       run: |
         npm install @capacitor/core @capacitor/cli @capacitor/android
-        npx capacitor add android || npx cap add android || echo "Android platform already added"
+        if [ ! -f "capacitor.config.json" ] && [ ! -f "capacitor.config.ts" ]; then
+          echo "Config file missing, creating one..."
+          npx cap init "MyAIApp" "com.yaseenm237.app" --web-dir=dist
+        fi
+        npx capacitor add android || npx cap add android || echo "Android platform creation tried"
         npx capacitor sync android || npx cap sync android
 
     - name: Automatically Push Created Files Back to Repository
