@@ -60,6 +60,9 @@ export interface AttendanceRecord {
   timestamp: number;
   status: 'P' | 'H' | 'A'; // Present, Half-day, Absent
   location?: string;
+  wage?: number; // Daily wage on this day
+  kharchi?: number; // Advance / Kharchi given on this day
+  time?: string; // Time recorded (e.g. 10:15 AM)
 }
 
 export interface AttendanceSettings {

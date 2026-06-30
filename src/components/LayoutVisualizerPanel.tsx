@@ -92,7 +92,15 @@ export default function LayoutVisualizerPanel({
     };
   }, [settings.sheetL, settings.sheetW, settings.unit, settings.trimMargin, settings.bladeTh]);
 
-  const [zoom, setZoom] = useState(100);
+  const [zooms, setZooms] = useState<Record<number, number>>({});
+  const getZoom = (index: number) => zooms[index] || 100;
+  const setZoom = (index: number, newZoom: number | ((prev: number) => number)) => {
+    setZooms(prev => {
+      const current = prev[index] || 100;
+      const next = typeof newZoom === 'function' ? newZoom(current) : newZoom;
+      return { ...prev, [index]: next };
+    });
+  };
   const [showGrid, setShowGrid] = useState(true);
   const [showRuler, setShowRuler] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
@@ -526,33 +534,6 @@ export default function LayoutVisualizerPanel({
           {isHindi ? 'लेआउट अनुकूलन परिणाम' : 'Cutting Layout Results'}
         </h3>
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
-          {/* Zoom controls */}
-          <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1.5 rounded-xl shrink-0">
-            <button
-              id="zoom-out-btn"
-              type="button"
-              onClick={() => setZoom(prev => Math.max(100, prev - 25))}
-              disabled={zoom <= 100}
-              className="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title={isHindi ? "ज़ूम आउट" : "Zoom Out"}
-            >
-              <ZoomOut size={15} />
-            </button>
-            <span className="text-[11px] font-extrabold text-slate-600 px-1 min-w-[32px] text-center">
-              {zoom}%
-            </span>
-            <button
-              id="zoom-in-btn"
-              type="button"
-              onClick={() => setZoom(prev => Math.min(300, prev + 25))}
-              disabled={zoom >= 300}
-              className="p-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title={isHindi ? "ज़ूम इन" : "Zoom In"}
-            >
-              <ZoomIn size={15} />
-            </button>
-          </div>
-
           {/* Grid, Ruler & Cut Sequence Toggles */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 p-1.5 rounded-xl shrink-0">
             <button
@@ -783,7 +764,27 @@ export default function LayoutVisualizerPanel({
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setZoom(layout.sheetIndex, prev => Math.max(50, prev - 25))}
+                          className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-white transition-colors"
+                        >
+                          <ZoomOut size={12} />
+                        </button>
+                        <span className="text-[10px] font-bold text-slate-600 px-1 w-8 text-center">
+                          {Math.round(getZoom(layout.sheetIndex))}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setZoom(layout.sheetIndex, prev => Math.min(400, prev + 25))}
+                          className="p-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-white transition-colors"
+                        >
+                          <ZoomIn size={12} />
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -791,7 +792,7 @@ export default function LayoutVisualizerPanel({
                           setEditingParts([...layout.parts]);
                           setSelectedPartId(null);
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold px-3.5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-md shadow-indigo-100"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-md shadow-indigo-100"
                         title={isHindi ? "इस शीट को खुद सेट करें" : "Edit sheet layout manually"}
                       >
                         <Sliders size={12} />
@@ -808,7 +809,7 @@ export default function LayoutVisualizerPanel({
                               return copy;
                             });
                           }}
-                          className="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-extrabold px-3.5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                          className="bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
                           title={isHindi ? "मूल लेआउट पर वापस जाएं" : "Reset to automated layout"}
                         >
                           <Undo2 size={12} />
@@ -850,7 +851,7 @@ export default function LayoutVisualizerPanel({
                         e.touches[0].clientY - e.touches[1].clientY
                       );
                       mainTouchStateRef.current.initialDist = dist;
-                      mainTouchStateRef.current.initialZoom = zoom;
+                      mainTouchStateRef.current.initialZoom = getZoom(layout.sheetIndex);
                     }
                   }}
                   onTouchMove={(e) => {
@@ -861,15 +862,15 @@ export default function LayoutVisualizerPanel({
                       );
                       const scale = dist / mainTouchStateRef.current.initialDist;
                       const newZoom = Math.min(Math.max(50, mainTouchStateRef.current.initialZoom * scale), 400);
-                      setZoom(newZoom);
+                      setZoom(layout.sheetIndex, newZoom);
                     }
                   }}
                 >
                   <div 
                     style={{ 
-                      width: `${zoom}%`, 
+                      width: `${getZoom(layout.sheetIndex)}%`, 
                       minWidth: '100%',
-                      maxWidth: zoom > 100 ? 'none' : '100%',
+                      maxWidth: getZoom(layout.sheetIndex) > 100 ? 'none' : '100%',
                     }} 
                     className="transition-all duration-75 origin-top-left"
                   >

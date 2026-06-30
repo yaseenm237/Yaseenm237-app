@@ -95,13 +95,37 @@ export default function SavedFilesModal({
 
   const exportJSON = (job: SavedJob) => {
     setOpenMenuId(null);
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(job, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `job_${job.name.replace(/\s+/g, '_')}_${new Date().getTime()}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
+    const jsonStr = JSON.stringify(job, null, 2);
+    const fileName = `job_${job.name.replace(/\s+/g, '_')}_${new Date().getTime()}.json`;
+    const jsonBlob = new Blob([jsonStr], { type: "application/json" });
+    const file = new File([jsonBlob], fileName, { type: "application/json" });
+
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          files: [file],
+          title: "Carpentry Job Backup",
+          text: "Here is your saved job backup."
+        }).catch((e) => {
+          console.log("Share cancelled", e);
+          const url = URL.createObjectURL(jsonBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+      } else {
+        const url = URL.createObjectURL(jsonBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (

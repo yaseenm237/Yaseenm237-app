@@ -15,8 +15,15 @@ import {
   TrendingUp,
   Settings,
   Grid,
-  Target
+  Target,
+  QrCode,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
+import { PartInput, SheetSettings } from '../types';
+import { QRCodeSVG } from 'qrcode.react';
+import { compressPayload } from '../utils/shareCompressor';
 
 interface ExportCenterModalProps {
   isOpen: boolean;
@@ -31,6 +38,8 @@ interface ExportCenterModalProps {
   partsCount: number;
   sheetsCount: number;
   utilization: number;
+  parts: PartInput[];
+  settings: SheetSettings;
 }
 
 export default function ExportCenterModal({
@@ -45,7 +54,9 @@ export default function ExportCenterModal({
   translations,
   partsCount,
   sheetsCount,
-  utilization
+  utilization,
+  parts,
+  settings
 }: ExportCenterModalProps) {
   // Translate local strings
   const titleText = isHindi ? "एक्सपोर्ट और प्रिंट सेंटर" : "Export & Print Center";
@@ -58,6 +69,27 @@ export default function ExportCenterModal({
   const efficiencyText = isHindi ? "मटीरियल उपयोग" : "Efficiency";
 
   const closeText = isHindi ? "बंद करें" : "Close";
+
+  const [copiedLink, setCopiedLink] = React.useState(false);
+
+  const getShareUrl = () => {
+    if (!parts || !settings) return window.location.href;
+    try {
+      const serialized = compressPayload(parts, settings);
+      const baseUrl = window.location.origin + window.location.pathname;
+      return `${baseUrl}?layout=${serialized}`;
+    } catch (e) {
+      console.error(e);
+      return window.location.href;
+    }
+  };
+
+  const handleCopyLink = () => {
+    const url = getShareUrl();
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
 
   return (
     <AnimatePresence>
@@ -78,7 +110,7 @@ export default function ExportCenterModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: 'spring', duration: 0.4 }}
-            className="relative bg-white rounded-2xl shadow-xl border border-slate-200 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col z-10"
+            className="relative bg-white rounded-2xl shadow-xl border border-slate-200 max-w-[95vw] lg:max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col z-10"
           >
             {/* Header */}
             <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
@@ -118,7 +150,7 @@ export default function ExportCenterModal({
 
             {/* Modal Body: Responsive Bento Grid for Export Options */}
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50/30">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
                 
                 {/* 1. PDF / PRINT REPORT */}
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-500/50 hover:shadow-md transition-all group">
@@ -363,6 +395,97 @@ export default function ExportCenterModal({
                     <span>{isHindi ? "कोआर्डिनेट्स एक्सपोर्ट" : "Export Drill Holes"}</span>
                     <ArrowRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
                   </button>
+                </div>
+
+                {/* 5. QR CODE SHARE */}
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-500/50 hover:shadow-md transition-all group">
+                  <div className="flex flex-col gap-4">
+                    {/* Live QR Code Preview */}
+                    <div className="aspect-[4/3] bg-slate-50 rounded-xl border border-slate-100 overflow-hidden relative flex flex-col items-center justify-center p-3 shadow-inner group-hover:bg-slate-100/50 transition-colors">
+                      <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200/50 flex flex-col items-center justify-center relative group-hover:scale-105 transition-transform duration-200">
+                        {partsCount === 0 ? (
+                          <div className="w-[84px] h-[84px] bg-slate-100 rounded-lg flex flex-col items-center justify-center text-slate-400">
+                            <QrCode size={24} className="animate-pulse" />
+                            <span className="text-[7px] font-bold mt-1 uppercase tracking-widest">{isHindi ? "कोई पुर्जे नहीं" : "No Parts"}</span>
+                          </div>
+                        ) : getShareUrl().length > 2000 ? (
+                          <div className="w-[84px] h-[84px] bg-amber-50 rounded-lg flex flex-col items-center justify-center text-amber-600 p-1 text-center border border-amber-200">
+                            <QrCode size={20} className="text-amber-500 mb-0.5" />
+                            <span className="text-[7px] font-black uppercase tracking-tight">{isHindi ? "लेआउट बड़ा है" : "Too Large"}</span>
+                            <span className="text-[5px] text-slate-500 leading-tight mt-0.5">{isHindi ? "लिंक कॉपी करें" : "Use Link Button"}</span>
+                          </div>
+                        ) : (
+                          <QRCodeSVG
+                            value={getShareUrl()}
+                            size={84}
+                            level="L"
+                            includeMargin={false}
+                          />
+                        )}
+                      </div>
+                      
+                      {/* Sub-label under QR */}
+                      {partsCount > 0 && getShareUrl().length <= 2000 && (
+                        <div className="mt-1 text-[8px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse flex items-center gap-0.5">
+                          <span>✨ Scan to Share</span>
+                        </div>
+                      )}
+                      {partsCount > 0 && getShareUrl().length > 2000 && (
+                        <div className="mt-1 text-[8px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-0.5">
+                          <span>⚠️ Share Link Only</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Metadata Details */}
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <QrCode size={16} className="text-indigo-600" />
+                        {isHindi ? "त्वरित क्यूआर कोड (QR)" : "Live QR Share Link"}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                        {isHindi 
+                          ? "अन्य डिवाइस पर अपनी बढ़ईगीरी लेआउट को तुरंत खोलने या शेयर करने के लिए स्कैन करें।" 
+                          : "Scan to instantly open or duplicate this sheet layout and materials list on another device."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 mt-6">
+                    <button
+                      onClick={handleCopyLink}
+                      disabled={partsCount === 0}
+                      className={`w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2.5 px-4 rounded-xl shadow-md transition-all cursor-pointer ${
+                        partsCount === 0
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 shadow-none cursor-not-allowed'
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 group-hover:scale-[1.02] active:scale-[0.98]'
+                      }`}
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check size={13} className="text-emerald-300" />
+                          <span>{isHindi ? "लिंक कॉपी हो गया!" : "Link Copied!"}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={13} />
+                          <span>{isHindi ? "लिंक कॉपी करें" : "Copy Share Link"}</span>
+                        </>
+                      )}
+                    </button>
+                    
+                    {partsCount > 0 && (
+                      <a
+                        href={getShareUrl()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 hover:underline transition-all mt-1 cursor-pointer"
+                      >
+                        <span>{isHindi ? "नए टैब में खोलें" : "Open in New Tab"}</span>
+                        <ExternalLink size={10} />
+                      </a>
+                    )}
+                  </div>
                 </div>
 
               </div>

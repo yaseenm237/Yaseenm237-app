@@ -21,6 +21,7 @@ import AttendanceModal from './components/AttendanceModal';
 import AboutModal from './components/AboutModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
+import { decompressPayload } from './utils/shareCompressor';
 import { Material, AttendanceSettings, AttendanceRecord } from './types';
 import { 
   Languages, 
@@ -211,6 +212,13 @@ const INITIAL_PARTS: PartInput[] = [
 
 const getInitialParts = (): PartInput[] => {
   try {
+    const params = new URLSearchParams(window.location.search);
+    const layoutParam = params.get('layout');
+    if (layoutParam) {
+      const decompressed = decompressPayload(layoutParam);
+      if (decompressed && decompressed.parts) return decompressed.parts;
+    }
+
     const session = window.sessionStorage.getItem('carpentry_workspace_session');
     if (session) {
       const parsed = JSON.parse(session);
@@ -225,6 +233,13 @@ const getInitialParts = (): PartInput[] => {
 
 const getInitialSettings = (): SheetSettings => {
   try {
+    const params = new URLSearchParams(window.location.search);
+    const layoutParam = params.get('layout');
+    if (layoutParam) {
+      const decompressed = decompressPayload(layoutParam);
+      if (decompressed && decompressed.settings) return { ...DEFAULT_SETTINGS, ...decompressed.settings };
+    }
+
     const session = window.sessionStorage.getItem('carpentry_workspace_session');
     let loadedSettings = DEFAULT_SETTINGS;
     if (session) {
@@ -313,8 +328,16 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const workerAuth = params.get('workerAuth');
     const recordAttendance = params.get('recordAttendance');
+    const layoutParam = params.get('layout');
     
-    if (recordAttendance) {
+    if (layoutParam) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        alert(language === 'Hindi' ? 'साझा लेआउट सफलतापूर्वक लोड हो गया!' : 'Shared layout successfully loaded!');
+      } catch (e) {
+        console.error(e);
+      }
+    } else if (recordAttendance) {
       try {
         const payload = JSON.parse(atob(recordAttendance));
         if (payload.w && payload.s && payload.d) {
@@ -620,14 +643,36 @@ export default function App() {
       console.error(e);
     }
 
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(jsonStr);
+    const fileName = `carpentry_optimizer_config.json`;
+    const jsonBlob = new Blob([jsonStr], { type: "application/json" });
+    const file = new File([jsonBlob], fileName, { type: "application/json" });
 
-    const link = document.createElement("a");
-    link.setAttribute("href", dataUri);
-    link.setAttribute("download", `carpentry_optimizer_config.json`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          files: [file],
+          title: "Carpentry JSON Backup",
+          text: "Here is your JSON backup."
+        }).catch((e) => {
+          console.log("Share cancelled", e);
+          const url = URL.createObjectURL(jsonBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+      } else {
+        const url = URL.createObjectURL(jsonBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.error(e);
+    }
     
     saveJobToStorageAndReset();
   };
@@ -677,13 +722,37 @@ export default function App() {
       console.error(e);
     }
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "cnc_coordinates.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvStr = lines.join("\n");
+    const fileName = "cnc_coordinates.csv";
+    const csvBlob = new Blob([csvStr], { type: "text/csv;charset=utf-8;" });
+    const file = new File([csvBlob], fileName, { type: "text/csv" });
+
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          files: [file],
+          title: "CNC Coordinates",
+          text: "Here is your CNC coordinates CSV file."
+        }).catch((e) => {
+          console.log("Share cancelled", e);
+          const url = URL.createObjectURL(csvBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+      } else {
+        const url = URL.createObjectURL(csvBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // JSON Import trigger
@@ -720,12 +789,12 @@ export default function App() {
         generatePdfReport(parts, settings, result, language);
         saveJobToStorageAndReset();
       } catch (err) {
-        console.error("PDF generation failed, falling back to window.print:", err);
-        window.print();
+        console.error("PDF generation failed:", err);
+        alert(language === 'Hindi' ? "पीडीएफ बनाने में त्रुटि: " + (err as Error).message : "Error generating PDF: " + (err as Error).message);
         saveJobToStorageAndReset();
       }
     } else {
-      window.print();
+      alert(language === 'Hindi' ? "निर्यात करने के लिए कोई डेटा नहीं है।" : "No data to export.");
     }
   };
 
@@ -1073,6 +1142,8 @@ export default function App() {
         partsCount={parts.reduce((acc, p) => acc + (p.quantity || 0), 0)}
         sheetsCount={result?.totalSheetsUsed || 0}
         utilization={result?.totalUtilization || 0}
+        parts={parts}
+        settings={settings}
       />
 
       {/* Blueprint Visual Report & Share Engine */}

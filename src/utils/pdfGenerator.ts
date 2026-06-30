@@ -320,6 +320,30 @@ export function generatePdfReport(
   });
 
   Array.from(groupedGlobalParts.values()).forEach((part, index) => {
+    // Check page overflow for global parts list
+    if (y > 270) {
+      doc.addPage();
+      currentPageNum++;
+      addHeaderFooter(isHindi ? 'आवश्यक कटिंग सूची (जारी)' : 'Required Cutting List (Cont.)');
+      y = 25;
+      
+      // redraw table header
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y, contentWidth, 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("PART ID / NAME", margin + 4, y + 4.8);
+      if (hasMultiple) {
+        doc.text("MATERIAL", margin + 45, y + 4.8);
+      }
+      doc.text("QTY", margin + 70, y + 4.8);
+      doc.text("DIMENSIONS", margin + 85, y + 4.8);
+      doc.text("GRAIN TYPE", margin + 120, y + 4.8);
+      doc.text("EDGE BANDING (T-B-L-R)", margin + 145, y + 4.8);
+      y += 8;
+    }
+
     // Zebra striping
     if (index % 2 === 0) {
       doc.setFillColor(250, 250, 250);
@@ -381,7 +405,11 @@ export function generatePdfReport(
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(127, 29, 29);
     doc.setFontSize(7.5);
-    const unplacedStr = result.unplacedParts.map(p => `${sanitizeText(p.name)} (x${p.qty})`).join(', ');
+    const maxUnplaced = 15;
+    let unplacedStr = result.unplacedParts.slice(0, maxUnplaced).map(p => `${sanitizeText(p.name)} (x${p.qty})`).join(', ');
+    if (result.unplacedParts.length > maxUnplaced) {
+      unplacedStr += `, ... and ${result.unplacedParts.length - maxUnplaced} more`;
+    }
     doc.text(`Unplaced pieces: ${unplacedStr}`, margin + 4, y + 9);
     y += 15;
   }
@@ -456,10 +484,9 @@ export function generatePdfReport(
     sy += 8;
 
     // DRAW THE LAYOUT MAP GRAPHICALLY
-    const drawX = margin;
-    const drawY = sy;
-    const maxDrawWidth = contentWidth; // 180mm
-    const maxDrawHeight = 75; // 75mm max height to fit on page nicely
+    // Center the graphic if it's smaller than the max width
+    const maxDrawWidth = contentWidth; // 190mm
+    const maxDrawHeight = 140; // Increased to 140mm for a much larger, clearer 2D graph
 
     // Compute raw sizes in mm using the specific layout's usable width + trim margins
     const T = settings.trimMargin; // in mm
@@ -470,6 +497,9 @@ export function generatePdfReport(
     const scale = Math.min(maxDrawWidth / rawLMm, maxDrawHeight / rawWMm);
     const sheetDrawW = rawLMm * scale;
     const sheetDrawH = rawWMm * scale;
+
+    const drawX = margin + (maxDrawWidth - sheetDrawW) / 2;
+    const drawY = sy;
 
     // Draw the outer Sheet frame (Waste / Raw dimensions)
     doc.setFillColor(248, 250, 252); // slate-50 background for the sheet
@@ -653,6 +683,26 @@ export function generatePdfReport(
 
     let partIdx = 0;
     groupedParts.forEach((part) => {
+      // Pagination for sheet parts table
+      if (sy > 275) {
+        doc.addPage();
+        currentPageNum++;
+        addHeaderFooter(isHindi ? `शीट #${layout.sheetIndex} कटिंग विवरण (जारी)` : `Sheet #${layout.sheetIndex} Cutting Map (Cont.)`);
+        sy = 25;
+        
+        // Redraw table header
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, sy, contentWidth, 5.5, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text("PART ID / NAME", margin + 3, sy + 3.8);
+        doc.text("QTY", margin + 65, sy + 3.8);
+        doc.text("FINISHED SIZE", margin + 95, sy + 3.8);
+        doc.text("ACTUAL CUT SIZE (SAW)", margin + 140, sy + 3.8);
+        sy += 5.5;
+      }
+
       if (partIdx % 2 === 1) {
         doc.setFillColor(252, 252, 252);
         doc.rect(margin, sy, contentWidth, 5.5, 'F');
@@ -684,6 +734,13 @@ export function generatePdfReport(
 
     // List ALL waste pieces for completeness
     sy += 4;
+    if (sy > 275) {
+      doc.addPage();
+      currentPageNum++;
+      addHeaderFooter(isHindi ? `शीट #${layout.sheetIndex} कटिंग विवरण (जारी)` : `Sheet #${layout.sheetIndex} Cutting Map (Cont.)`);
+      sy = 25;
+    }
+    
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
@@ -691,10 +748,15 @@ export function generatePdfReport(
     sy += 4;
 
     if (layout.wasteRects && layout.wasteRects.length > 0) {
-      const allScrapsStr = layout.wasteRects.map((w, wIdx) => {
+      const maxScraps = 50;
+      let allScrapsStr = layout.wasteRects.slice(0, maxScraps).map((w, wIdx) => {
         const isM = w.w >= 250 && w.h >= 250;
         return `W${wIdx + 1}: ${formatDim(w.w, settings.unit)} x ${formatDim(w.h, settings.unit)} (${isM ? 'Major' : 'Minor'})`;
       }).join(', ');
+      
+      if (layout.wasteRects.length > maxScraps) {
+        allScrapsStr += `, ... and ${layout.wasteRects.length - maxScraps} more small scraps.`;
+      }
       
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
@@ -708,6 +770,27 @@ export function generatePdfReport(
     }
   });
 
-  // Save the generated document
-  doc.save(`smart_carpentry_layout_${settings.algorithm}.pdf`);
+  // Save or Share the generated document
+  const fileName = `smart_carpentry_layout_${settings.algorithm}.pdf`;
+  try {
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({
+        files: [file],
+        title: isHindi ? 'बढ़ईगीरी लेआउट (Carpentry Layout)' : 'Carpentry Layout',
+        text: isHindi ? 'यहाँ आपका कटिंग लेआउट पीडीएफ है।' : 'Here is your cutting layout PDF.',
+      }).catch((err) => {
+        console.log('Share failed or was cancelled:', err);
+        // Fallback to download if share is cancelled or fails
+        doc.save(fileName);
+      });
+    } else {
+      // Direct save
+      doc.save(fileName);
+    }
+  } catch (e) {
+    console.error('Error during PDF sharing/saving:', e);
+    doc.save(fileName);
+  }
 }
