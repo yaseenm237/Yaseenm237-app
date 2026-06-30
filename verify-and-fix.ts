@@ -36,20 +36,38 @@ function verifyJar(filePath: string): boolean {
     return false;
   }
 
-  // Test executing with Java
+  // 1. Verify archive integrity using unzip -t if available
+  try {
+    console.log(`⚙️ Testing archive integrity of ${filePath} using unzip...`);
+    execSync(`unzip -t "${filePath}"`, { stdio: 'pipe' });
+    console.log(`✅ ${filePath} archive integrity verified via unzip!`);
+  } catch (err: any) {
+    console.log(`❌ unzip -t failed: This file is corrupt or not a valid ZIP archive.`);
+    return false;
+  }
+
+  // 2. Test executing with Java if available
   try {
     console.log(`⚙️ Testing execution of ${filePath} using Java...`);
-    execSync(`java -jar ${filePath} --version`, { stdio: 'pipe' });
+    const javaCmd = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', 'java') : 'java';
+    execSync(`"${javaCmd}" -jar "${filePath}" --version`, { stdio: 'pipe' });
     console.log(`✅ ${filePath} verified successfully with Java execution!`);
     return true;
   } catch (err: any) {
-    // Gradle wrapper might complain about missing properties, but it shouldn't say "Invalid or corrupt jarfile"
     const stderr = err.stderr?.toString() || '';
     const stdout = err.stdout?.toString() || '';
+    const message = err.message || '';
+    
     if (stderr.includes('Invalid or corrupt jarfile') || stdout.includes('Invalid or corrupt jarfile')) {
       console.log(`❌ Java reports: Invalid or corrupt jarfile.`);
       return false;
     }
+    
+    if (message.includes('ENOENT') || stderr.includes('not found') || message.includes('not found')) {
+      console.log(`⚠️ Java command was not found or could not execute, relying on unzip verification.`);
+      return true; // Succeeded unzip, so assume good
+    }
+    
     // Any other error (like missing properties or gradle-wrapper.properties not found) is acceptable because the jar structure itself is intact!
     console.log(`✅ Jar is structurally valid (Java recognized it without corruption error).`);
     return true;
