@@ -1036,12 +1036,26 @@ export default function AttendanceModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 shadow-sm active:translate-y-[2px] active:border-b transition-all duration-75 text-slate-600 dark:text-slate-300 cursor-pointer"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if(window.confirm(isHindi ? "क्या आप पूरा डेटा हटाना चाहते हैं? यह आपका अकाउंट रीसेट कर देगा।" : "Are you sure you want to delete all data? This will reset your account.")) {
+                  onUpdateData({ workers: [] });
+                  triggerToast(isHindi ? "डेटा रीसेट कर दिया गया!" : "Account data reset!");
+                }
+              }}
+              className="px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 size={14} />
+              {isHindi ? "अकाउंट हटाएं" : "Delete Account"}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 bg-slate-100 hover:bg-rose-500 hover:text-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 shadow-sm active:translate-y-[2px] active:border-b transition-all duration-75 text-slate-600 dark:text-slate-300 cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
@@ -2123,6 +2137,51 @@ export default function AttendanceModal({
           )}
 
         </div>
+
+        {selectedWorkerForQR && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white dark:bg-slate-950 max-w-sm w-full rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95">
+              <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900">
+                <h3 className="font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <QrCode size={18} className="text-indigo-500" />
+                  {isHindi ? "मजदूर सेटअप" : "Worker Setup"}
+                </h3>
+                <button
+                  onClick={() => setSelectedWorkerForQR(null)}
+                  className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-500"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-8 flex flex-col items-center text-center space-y-6">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                  <QRCodeSVG 
+                    value={`${window.location.origin}?worker=${selectedWorkerForQR.id}`}
+                    size={180}
+                    level="H"
+                    includeMargin={false}
+                    fgColor="#1e1b4b"
+                  />
+                </div>
+                <div>
+                  <h4 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-1">
+                    {selectedWorkerForQR.name}
+                  </h4>
+                  <p className="text-sm font-medium text-slate-500">
+                    {selectedWorkerForQR.phone}
+                  </p>
+                </div>
+                <div className="w-full space-y-3">
+                  <p className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                    {isHindi 
+                      ? "मजदूर को यह क्यूआर कोड स्कैन करने दें ताकि वे अपने फोन पर अपनी हाजिरी खुद देख और भर सकें।"
+                      : "Let the worker scan this QR code to view and mark their own attendance on their phone."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

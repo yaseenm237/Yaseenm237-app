@@ -1,8 +1,7 @@
 {
-  "name": "smart-carpentry-optimizer",
-  "description": "Smart Carpentry Optimizer - Android APK Application",
+  "name": "react-example",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -13,8 +12,7 @@
     "cap:add": "cap add android",
     "cap:sync": "vite build && cap sync",
     "cap:open": "cap open android",
-    "android:build": "bash ./build-apk.sh",
-    "android:release": "bash ./build-apk.sh --release"
+    "android:build": "bash ./build-apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

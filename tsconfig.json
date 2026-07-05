@@ -17,21 +17,10 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "src/*"
+        "./*"
       ]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": [
-    "src",
-    "index.html"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+    "noEmit": true
+  }
 }
