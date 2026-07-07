@@ -4,6 +4,7 @@ import {
   Worker,
   AttendanceRecord,
   AttendanceSettings,
+  AppConfig,
 } from "../types";
 import {
   X,
@@ -48,6 +49,7 @@ import {
   encryptP2PMessage,
   decryptP2PMessage
 } from "../utils/autoSyncService";
+import { encryptData, decryptData } from "../utils/crypto";
 
 interface AttendanceModalProps {
   isOpen: boolean;
@@ -55,6 +57,8 @@ interface AttendanceModalProps {
   language: Language;
   attendanceData: AttendanceSettings;
   onUpdateData: (data: AttendanceSettings) => void;
+  appConfig?: AppConfig;
+  onUpdateAppConfig?: (config: AppConfig) => void;
 }
 
 // Demo Locations for Simulation
@@ -362,10 +366,77 @@ export default function AttendanceModal({
   isOpen,
   onClose,
   language,
-  attendanceData,
-  onUpdateData,
+  attendanceData: propAttendanceData,
+  onUpdateData: propOnUpdateData,
+  appConfig,
+  onUpdateAppConfig,
 }: AttendanceModalProps) {
   const isHindi = language === "Hindi";
+
+  // Privacy Lock / Decrypted State
+  const [decryptedData, setDecryptedData] = useState<{ workers: Worker[]; records: AttendanceRecord[] } | null>(null);
+  const [vaultPasscode, setVaultPasscode] = useState<string>("");
+  const [passcodeAttempt, setPasscodeAttempt] = useState<string>("");
+  const [passcodeError, setPasscodeError] = useState<boolean>(false);
+
+  const attendanceData = React.useMemo(() => {
+    if (propAttendanceData.isEncrypted && decryptedData) {
+      return {
+        ...propAttendanceData,
+        workers: decryptedData.workers || [],
+        records: decryptedData.records || []
+      };
+    }
+    return propAttendanceData;
+  }, [propAttendanceData, decryptedData]);
+
+  const onUpdateData = React.useCallback((updatedFields: Partial<AttendanceSettings>) => {
+    const merged = {
+      ...attendanceData,
+      ...updatedFields
+    };
+
+    if (propAttendanceData.isEncrypted && vaultPasscode) {
+      const sensitive = {
+        workers: merged.workers || [],
+        records: merged.records || []
+      };
+      const blob = encryptData(sensitive, vaultPasscode);
+      
+      propOnUpdateData({
+        contractorName: merged.contractorName,
+        contractorPhone: merged.contractorPhone,
+        workers: [],
+        records: [],
+        isEncrypted: true,
+        encryptedBlob: blob,
+        passcodeHash: merged.passcodeHash || propAttendanceData.passcodeHash
+      });
+    } else {
+      propOnUpdateData({
+        ...merged,
+        isEncrypted: false,
+        encryptedBlob: undefined,
+        passcodeHash: undefined
+      });
+    }
+  }, [attendanceData, propAttendanceData, vaultPasscode, propOnUpdateData]);
+
+  const handleUnlock = (enteredPasscode: string) => {
+    if (!propAttendanceData.encryptedBlob) return;
+    const decrypted = decryptData(propAttendanceData.encryptedBlob, enteredPasscode);
+    if (decrypted && Array.isArray(decrypted.workers)) {
+      setDecryptedData(decrypted);
+      setVaultPasscode(enteredPasscode);
+      setPasscodeError(false);
+      triggerToast(isHindi ? "गोपनीय तिजोरी अनलॉक हो गई!" : "Privacy Vault unlocked!");
+    } else {
+      setPasscodeError(true);
+      setPasscodeAttempt("");
+      triggerToast(isHindi ? "गलत पासकोड! पुनः प्रयास करें।" : "Incorrect Passcode! Please try again.");
+    }
+  };
+
   const [activeTab, setActiveTab] = useState<"contractor" | "parser" | "worker">("contractor");
 
   // Date/Month navigation (defaults to current month)
@@ -373,6 +444,9 @@ export default function AttendanceModal({
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  // Smart Multi-Tag Filtering state for workers
+  const [workerFilter, setWorkerFilter] = useState<"all" | "active" | "leave" | "paid" | "pending">("all");
 
   // Contractor Add/Edit worker states
   const [showAddWorker, setShowAddWorker] = useState(false);
@@ -389,6 +463,7 @@ export default function AttendanceModal({
     kharchi: 0,
     location: "",
     time: "",
+    coordinates: undefined as { lat: number; lng: number } | undefined,
   });
 
   // Clipboard Paste Parser States
@@ -448,6 +523,204 @@ export default function AttendanceModal({
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Contractor Account Login & Profile states
+  const [inputContractorName, setInputContractorName] = useState("");
+  const [inputContractorPhone, setInputContractorPhone] = useState("");
+  const [newProfileName, setNewProfileName] = useState("");
+  const [showCreateProfile, setShowCreateProfile] = useState(false);
+
+  // WhatsApp Report Generator States
+  const [generatorDate, setGeneratorDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [generatedReportText, setGeneratedReportText] = useState("");
+  const [isReportP2PEncrypted, setIsReportP2PEncrypted] = useState(true);
+
+  // Sync inputs with current contractor data on mount or data changes
+  useEffect(() => {
+    if (attendanceData.contractorName) {
+      setInputContractorName(attendanceData.contractorName);
+    }
+    if (attendanceData.contractorPhone) {
+      setInputContractorPhone(attendanceData.contractorPhone);
+    }
+  }, [attendanceData.contractorName, attendanceData.contractorPhone]);
+
+  const handleContractorLogin = (nameToUse?: string, phoneToUse?: string) => {
+    const finalName = (nameToUse || inputContractorName).trim();
+    const finalPhone = (phoneToUse || inputContractorPhone).trim();
+    if (!finalName || !finalPhone) {
+      triggerToast(isHindi ? "कृपया सभी फ़ील्ड भरें!" : "Please fill in all fields!");
+      return;
+    }
+
+    if (appConfig && onUpdateAppConfig && appConfig.activeUserId) {
+      const updatedUsers = appConfig.users.map(u => 
+        u.id === appConfig.activeUserId ? { ...u, name: finalName } : u
+      );
+      onUpdateAppConfig({
+        ...appConfig,
+        users: updatedUsers
+      });
+    }
+
+    onUpdateData({
+      ...attendanceData,
+      contractorName: finalName,
+      contractorPhone: finalPhone,
+    });
+    triggerToast(
+      isHindi 
+        ? `ठेकेदार ${finalName} के रूप में लॉगिन किया गया!` 
+        : `Logged in as Contractor ${finalName}!`
+    );
+  };
+
+  const handleSwitchProfile = (userId: string) => {
+    if (appConfig && onUpdateAppConfig) {
+      onUpdateAppConfig({
+        ...appConfig,
+        activeUserId: userId
+      });
+      triggerToast(isHindi ? "प्रोफ़ाइल बदली गई!" : "Workspace profile switched!");
+    }
+  };
+
+  const handleCreateNewProfileAndLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newProfileName.trim();
+    if (!name) return;
+
+    const newUserId = `user-${Math.random().toString(36).substring(2, 9)}`;
+    const newUserProfile = {
+      id: newUserId,
+      name: name,
+      createdAt: Date.now(),
+      lastActive: Date.now()
+    };
+
+    if (appConfig && onUpdateAppConfig) {
+      const updatedUsers = [...appConfig.users, newUserProfile];
+      onUpdateAppConfig({
+        ...appConfig,
+        users: updatedUsers,
+        activeUserId: newUserId
+      });
+      
+      setNewProfileName("");
+      setShowCreateProfile(false);
+      
+      onUpdateData({
+        contractorName: name,
+        contractorPhone: "9876543210",
+        workers: [],
+        records: []
+      });
+      
+      triggerToast(
+        isHindi 
+          ? `नया प्रोफ़ाइल ${name} बनाया और लॉगिन किया गया!` 
+          : `Created and logged in as profile: ${name}!`
+      );
+    }
+  };
+
+  const handleGenerateReport = (type: "daily" | "monthly") => {
+    const workers = attendanceData.workers || [];
+    const records = attendanceData.records || [];
+    
+    if (workers.length === 0) {
+      triggerToast(isHindi ? "कोई मजदूर नहीं मिला!" : "No workers found to generate report!");
+      return;
+    }
+
+    let report = "";
+    
+    if (type === "daily") {
+      const targetDate = generatorDate;
+      report += `📋 HAJIRI STATUS: ${targetDate}\n`;
+      report += `Contractor: ${attendanceData.contractorName || "N/A"}\n`;
+      report += `==============================\n`;
+      
+      let pCount = 0;
+      let hCount = 0;
+      let aCount = 0;
+      let totalKharchi = 0;
+
+      workers.forEach((w, idx) => {
+        const r = records.find(rec => rec.workerId === w.id && rec.date === targetDate);
+        let statusStr = "🔴 Absent";
+        if (r) {
+          if (r.status === "P") { statusStr = "🟢 Present"; pCount++; }
+          else if (r.status === "H") { statusStr = "🟡 Half-Day"; hCount++; }
+          else if (r.status === "A") { aCount++; }
+          
+          if (r.kharchi) totalKharchi += r.kharchi;
+        } else {
+          statusStr = "⚪ Not Marked";
+        }
+        
+        const locStr = r && r.location ? ` @ ${r.location}` : "";
+        const kharchiStr = r && r.kharchi ? ` | Advance: ₹${r.kharchi} (kharchi ${r.kharchi})` : "";
+        
+        report += `${idx + 1}. ${w.name}: ${statusStr}${locStr}${kharchiStr}\n`;
+      });
+      
+      report += `==============================\n`;
+      report += `Summary: Present: ${pCount} | Half-day: ${hCount} | Absent: ${aCount}\n`;
+      report += `Total Advances: ₹${totalKharchi}\n`;
+      report += `==============================\n`;
+      report += `Sync Code: [HJRI-RAW::${targetDate}::`;
+      
+      const syncPairs = workers.map(w => {
+        const r = records.find(rec => rec.workerId === w.id && rec.date === targetDate);
+        if (r) {
+          return `${w.name}:${r.status || "P"}${r.kharchi ? `K${r.kharchi}` : ""}${r.location ? `L${r.location}` : ""}`;
+        }
+        return `${w.name}:A`;
+      });
+      report += syncPairs.join("|") + "]";
+      
+    } else {
+      report += `📅 HAJIRI MONTHLY SUMMARY: ${getSelectedMonthDisplay()}\n`;
+      report += `Contractor: ${attendanceData.contractorName || "N/A"}\n`;
+      report += `==============================\n`;
+      
+      workers.forEach((w, idx) => {
+        const stats = calculateWorkerMonthStats(w);
+        report += `${idx + 1}. ${w.name}:\n`;
+        report += `   • Worked: ${stats.presentCount} P | ${stats.halfCount} H\n`;
+        report += `   • Wages: ₹${stats.totalEarned}\n`;
+        report += `   • Paid: ₹${stats.totalPaid}\n`;
+        report += `   • Balance Due: ₹${stats.netPayable}\n`;
+      });
+      
+      report += `==============================\n`;
+      const grandEarned = workers.reduce((acc, w) => acc + calculateWorkerMonthStats(w).totalEarned, 0);
+      const grandPaid = workers.reduce((acc, w) => acc + calculateWorkerMonthStats(w).totalPaid, 0);
+      const grandDue = workers.reduce((acc, w) => acc + calculateWorkerMonthStats(w).netPayable, 0);
+      report += `Grand Total Wages: ₹${grandEarned}\n`;
+      report += `Grand Total Paid: ₹${grandPaid}\n`;
+      report += `Total Balance Due: ₹${grandDue}\n`;
+      report += `==============================\n`;
+    }
+
+    if (isReportP2PEncrypted) {
+      const encrypted = encryptP2PMessage(report, p2pKey);
+      setGeneratedReportText(encrypted);
+    } else {
+      setGeneratedReportText(report);
+    }
+    
+    triggerToast(isHindi ? "रिपोर्ट सफलतापूर्वक जनरेट की गई!" : "Report generated successfully!");
+  };
+
+  const handleSendReportToWhatsApp = () => {
+    if (!generatedReportText) return;
+    const phone = attendanceData.contractorPhone || "";
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(generatedReportText)}`;
+    window.open(url, "_blank");
+    triggerToast(isHindi ? "व्हाट्सएप चैट खोली जा रही है..." : "Opening WhatsApp...");
   };
 
   useEffect(() => {
@@ -645,7 +918,39 @@ export default function AttendanceModal({
       kharchi: existing && existing.kharchi !== undefined ? existing.kharchi : 0,
       location: existing && existing.location ? existing.location : "",
       time: existing && existing.time ? existing.time : "09:30 AM",
+      coordinates: existing && existing.coordinates ? existing.coordinates : undefined,
     });
+  };
+
+  const fetchCurrentLocationCoordinates = () => {
+    if (!navigator.geolocation) {
+      triggerToast(isHindi ? "जीपीएस आपके ब्राउज़र द्वारा समर्थित नहीं है।" : "GPS is not supported by your browser.");
+      return;
+    }
+    
+    triggerToast(isHindi ? "जीपीएस स्थान प्राप्त किया जा रहा है..." : "Fetching GPS coordinates...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setEditingRecord(prev => ({
+          ...prev,
+          coordinates: { lat: latitude, lng: longitude }
+        }));
+        triggerToast(isHindi ? "जीपीएस स्थान टैग किया गया!" : "GPS Location Coordinates Tagged!");
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        // Fallback or alert
+        const mockLat = 28.5355 + (Math.random() - 0.5) * 0.01;
+        const mockLng = 77.2639 + (Math.random() - 0.5) * 0.01;
+        setEditingRecord(prev => ({
+          ...prev,
+          coordinates: { lat: mockLat, lng: mockLng }
+        }));
+        triggerToast(isHindi ? "जीपीएस अनुमति लंबित; सिमुलेटेड कोऑर्डिनेट्स टैग किए गए!" : "GPS blocked or timed out; simulated coordinates tagged!");
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
   };
 
   const handleSaveDayRecord = () => {
@@ -668,6 +973,7 @@ export default function AttendanceModal({
         kharchi: editingRecord.kharchi,
         location: editingRecord.location || undefined,
         time: editingRecord.time || undefined,
+        coordinates: editingRecord.coordinates || undefined,
       };
       updatedRecords.push(newRecord);
     }
@@ -1016,19 +1322,128 @@ export default function AttendanceModal({
 
       <div className="bg-slate-50 dark:bg-slate-900 w-full max-w-6xl h-[95vh] md:h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
         
-        {/* Modal Header */}
-        <div className="px-6 py-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-2xl">
-              <Calendar size={26} />
+        {propAttendanceData.isEncrypted && !decryptedData ? (
+          <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 text-white p-6 relative">
+            {/* Close button */}
+            <button
+              onClick={onClose}
+              className="absolute top-6 right-6 text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X size={24} />
+            </button>
+            
+            <div className="max-w-xs w-full text-center space-y-6">
+              <div className="space-y-2">
+                <div className="w-16 h-16 bg-indigo-950 border border-indigo-500/30 text-indigo-400 rounded-3xl flex items-center justify-center mx-auto shadow-lg">
+                  <span className="text-3xl">🔒</span>
+                </div>
+                <h3 className="text-lg font-black tracking-tight text-slate-100">
+                  {isHindi ? "गोपनीय तिजोरी लॉक है" : "Privacy Vault Locked"}
+                </h3>
+                <p className="text-xs text-slate-400 font-medium">
+                  {isHindi ? "डेटा अनलॉक करने के लिए अपना 4-अंकों का पासकोड दर्ज करें।" : "Enter your 4-digit passcode to decrypt and unlock records."}
+                </p>
+              </div>
+
+              {/* Passcode dots display */}
+              <div className="flex justify-center gap-4 py-2">
+                {[1, 2, 3, 4].map((dot) => (
+                  <div
+                    key={dot}
+                    className={`w-4 h-4 rounded-full border-2 transition-all duration-100 ${
+                      passcodeAttempt.length >= dot
+                        ? "bg-indigo-500 border-indigo-400 scale-110 shadow-lg shadow-indigo-500/50"
+                        : "bg-slate-800 border-slate-700"
+                    }`}
+                  />
+                ))}
+              </div>
+
+              {passcodeError && (
+                <p className="text-xs text-rose-500 font-black">
+                  ❌ {isHindi ? "गलत पासकोड! पुनः प्रयास करें।" : "Incorrect Passcode! Try again."}
+                </p>
+              )}
+
+              {/* Grid numeric keypad */}
+              <div className="grid grid-cols-3 gap-3 pt-2">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                  <button
+                    key={num}
+                    onClick={() => {
+                      setPasscodeError(false);
+                      if (passcodeAttempt.length < 4) {
+                        const val = passcodeAttempt + num;
+                        setPasscodeAttempt(val);
+                        if (val.length === 4) {
+                          handleUnlock(val);
+                        }
+                      }
+                    }}
+                    className="aspect-square bg-slate-800 hover:bg-slate-750 text-slate-100 font-black rounded-2xl text-lg flex items-center justify-center active:scale-95 transition-all cursor-pointer border border-slate-700 shadow-md"
+                  >
+                    {num}
+                  </button>
+                ))}
+                
+                {/* Clear button */}
+                <button
+                  onClick={() => {
+                    setPasscodeAttempt("");
+                    setPasscodeError(false);
+                  }}
+                  className="aspect-square bg-slate-800/40 hover:bg-slate-800 text-slate-400 font-semibold rounded-2xl text-xs flex items-center justify-center active:scale-95 transition-all cursor-pointer border border-slate-700/40"
+                >
+                  {isHindi ? "साफ" : "CLR"}
+                </button>
+                
+                {/* Zero */}
+                <button
+                  onClick={() => {
+                    setPasscodeError(false);
+                    if (passcodeAttempt.length < 4) {
+                      const val = passcodeAttempt + "0";
+                      setPasscodeAttempt(val);
+                      if (val.length === 4) {
+                        handleUnlock(val);
+                      }
+                    }
+                  }}
+                  className="aspect-square bg-slate-800 hover:bg-slate-750 text-slate-100 font-black rounded-2xl text-lg flex items-center justify-center active:scale-95 transition-all cursor-pointer border border-slate-700 shadow-md"
+                >
+                  0
+                </button>
+
+                {/* Backspace */}
+                <button
+                  onClick={() => {
+                    if (passcodeAttempt.length > 0) {
+                      setPasscodeAttempt(passcodeAttempt.slice(0, -1));
+                      setPasscodeError(false);
+                    }
+                  }}
+                  className="aspect-square bg-slate-800/40 hover:bg-slate-800 text-slate-400 font-semibold rounded-2xl text-xs flex items-center justify-center active:scale-95 transition-all cursor-pointer border border-slate-700/40"
+                >
+                  ⌫
+                </button>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                {isHindi ? "हाजिरी पोर्टल (Hajiri Portal)" : "Hajiri Portal (Attendance)"}
-                <span className="text-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider">
-                  {isHindi ? "ऑटो-सिंक" : "Auto-Sync Engine"}
-                </span>
-              </h2>
+          </div>
+        ) : (
+          <>
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-2xl">
+                  <Calendar size={26} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    {isHindi ? "हाजिरी पोर्टल (Hajiri Portal)" : "Hajiri Portal (Attendance)"}
+                    <span className="text-xs bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-black px-2.5 py-1 rounded-full border border-indigo-200 dark:border-indigo-800 uppercase tracking-wider">
+                      {isHindi ? "ऑटो-सिंक" : "Auto-Sync Engine"}
+                    </span>
+                  </h2>
               <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                 {isHindi
                   ? "मजदूरों की 30-दिन की हाजिरी और व्हाट्सएप ऑटो-सिंक प्रणाली (ऑफ़लाइन काम करने वाला)"
@@ -1039,9 +1454,29 @@ export default function AttendanceModal({
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                if(window.confirm(isHindi ? "क्या आप पूरा डेटा हटाना चाहते हैं? यह आपका अकाउंट रीसेट कर देगा।" : "Are you sure you want to delete all data? This will reset your account.")) {
-                  onUpdateData({ workers: [] });
-                  triggerToast(isHindi ? "डेटा रीसेट कर दिया गया!" : "Account data reset!");
+                if(window.confirm(isHindi ? "क्या आप पूरा डेटा हटाना चाहते हैं? यह आपका अकाउंट हटा देगा।" : "Are you sure you want to delete this account and all its data?")) {
+                  if (appConfig && onUpdateAppConfig && appConfig.activeUserId) {
+                    const remainingUsers = appConfig.users.filter(u => u.id !== appConfig.activeUserId);
+                    if (remainingUsers.length > 0) {
+                      onUpdateAppConfig({
+                        ...appConfig,
+                        users: remainingUsers,
+                        activeUserId: remainingUsers[0].id
+                      });
+                      triggerToast(isHindi ? "अकाउंट हटा दिया गया!" : "Account deleted!");
+                    } else {
+                      onUpdateAppConfig({
+                        ...appConfig,
+                        users: [{ id: 'default', name: 'Default User', createdAt: Date.now(), lastActive: Date.now() }],
+                        activeUserId: 'default'
+                      });
+                      onUpdateData({ contractorName: "", contractorPhone: "", workers: [], records: [] });
+                      triggerToast(isHindi ? "अकाउंट रीसेट कर दिया गया!" : "Account reset!");
+                    }
+                  } else {
+                    onUpdateData({ contractorName: "", contractorPhone: "", workers: [], records: [] });
+                    triggerToast(isHindi ? "डेटा रीसेट कर दिया गया!" : "Account data reset!");
+                  }
                 }
               }}
               className="px-3 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/50 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -1059,60 +1494,310 @@ export default function AttendanceModal({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="bg-slate-100 dark:bg-slate-950 px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between">
-          <div className="flex gap-2.5 bg-slate-200 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-slate-300 dark:border-slate-850">
+        {!(attendanceData.contractorName && attendanceData.contractorPhone) && activeTab !== "worker" ? (
+          <div className="bg-slate-100 dark:bg-slate-950 px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+              <span>👷‍♂️</span> {isHindi ? "ठेकेदार खाता लॉगिन / रजिस्ट्रेशन" : "Contractor Account Login & Setup"}
+            </span>
             <button
-              onClick={() => setActiveTab("contractor")}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === "contractor"
-                  ? "bg-indigo-600 text-white shadow-md border-b-4 border-indigo-800 -translate-y-0.5 active:translate-y-0 active:border-b-2"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+              onClick={() => setActiveTab("worker")}
+              className="px-3.5 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-black transition-all border border-slate-300 dark:border-slate-700 active:scale-95 cursor-pointer"
             >
-              <Users size={16} />
-              {isHindi ? "ठेकेदार डैशबोर्ड (Cards)" : "Contractor Dashboard"}
-            </button>
-            <button
-              onClick={() => setActiveTab("parser")}
-              className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
-                activeTab === "parser"
-                  ? "bg-indigo-600 text-white shadow-md border-b-4 border-indigo-800 -translate-y-0.5 active:translate-y-0 active:border-b-2"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-            >
-              <MessageSquare size={16} />
-              {isHindi ? "व्हाट्सएप ऑटो-सिंक (Sync)" : "WhatsApp Sync Engine"}
+              {isHindi ? "मजदूर पोर्टल पर जाएं" : "Go to Worker Portal"}
             </button>
           </div>
-
-          {/* Month Navigator (Only shown in Contractor Tab) */}
-          {activeTab === "contractor" && (
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm">
+        ) : (
+          <div className="bg-slate-100 dark:bg-slate-950 px-6 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap gap-4 items-center justify-between">
+            <div className="flex gap-2.5 bg-slate-200 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-slate-300 dark:border-slate-850">
               <button
-                onClick={handlePrevMonth}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 active:translate-y-[2px] active:border-b transition-all duration-75 cursor-pointer"
+                onClick={() => setActiveTab("contractor")}
+                className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  activeTab === "contractor"
+                    ? "bg-indigo-600 text-white shadow-md border-b-4 border-indigo-800 -translate-y-0.5 active:translate-y-0 active:border-b-2"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
               >
-                <ChevronLeft size={16} />
+                <Users size={16} />
+                {isHindi ? "ठेकेदार डैशबोर्ड (Cards)" : "Contractor Dashboard"}
               </button>
-              <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 min-w-[130px] text-center font-mono bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-1 rounded-lg">
-                {getSelectedMonthDisplay()}
-              </span>
               <button
-                onClick={handleNextMonth}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 active:translate-y-[2px] active:border-b transition-all duration-75 cursor-pointer"
+                onClick={() => setActiveTab("parser")}
+                className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  activeTab === "parser"
+                    ? "bg-indigo-600 text-white shadow-md border-b-4 border-indigo-800 -translate-y-0.5 active:translate-y-0 active:border-b-2"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
               >
-                <ChevronRight size={16} />
+                <MessageSquare size={16} />
+                {isHindi ? "व्हाट्सएप ऑटो-सिंक (Sync)" : "WhatsApp Sync Engine"}
               </button>
             </div>
-          )}
-        </div>
+
+            {/* Month Navigator (Only shown in Contractor Tab) */}
+            {activeTab === "contractor" && (
+              <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm">
+                <button
+                  onClick={handlePrevMonth}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 active:translate-y-[2px] active:border-b transition-all duration-75 cursor-pointer"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs sm:text-sm font-black text-indigo-600 dark:text-indigo-400 min-w-[130px] text-center font-mono bg-indigo-50/50 dark:bg-indigo-950/20 px-3 py-1 rounded-lg">
+                  {getSelectedMonthDisplay()}
+                </span>
+                <button
+                  onClick={handleNextMonth}
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl border border-slate-200 dark:border-slate-800 border-b-4 border-b-slate-300 dark:border-b-slate-950 active:translate-y-[2px] active:border-b transition-all duration-75 cursor-pointer"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 dark:bg-slate-900">
           
-          {/* TAB 1: CONTRACTOR DASHBOARD */}
-          {activeTab === "contractor" && (
-            <div className="space-y-6">
+          {activeTab !== "worker" && !(attendanceData.contractorName && attendanceData.contractorPhone) ? (
+            <div className="max-w-md mx-auto space-y-6 py-4 animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-slate-950 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-100 dark:border-indigo-900 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto shadow-sm">
+                    <span className="text-3xl">👷‍♂️</span>
+                  </div>
+                  <h2 className="text-xl font-black text-slate-850 dark:text-slate-100">
+                    {isHindi ? "ठेकेदार खाता लॉगिन / पंजीकरण" : "Contractor Portal Login"}
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {isHindi 
+                      ? "मजदूरों की दैनिक हाजिरी और ३०-दिन के हाजिरी कार्ड का प्रबंधन करने के लिए विवरण दर्ज करें।"
+                      : "Enter your contractor credentials or choose a carpentry workspace profile to start tracking."}
+                  </p>
+                </div>
+
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleContractorLogin();
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="block text-xs font-black text-slate-600 dark:text-slate-400">
+                      {isHindi ? "ठेकेदार / आपका नाम" : "Contractor / Your Name"} *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={inputContractorName}
+                      onChange={(e) => setInputContractorName(e.target.value)}
+                      placeholder="e.g. Ramesh Sharma"
+                      className="w-full p-3 border border-slate-300 dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-900 text-slate-850 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-black text-slate-600 dark:text-slate-400">
+                      {isHindi ? "व्हाट्सएप मोबाइल नंबर" : "WhatsApp Phone Number"} *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={inputContractorPhone}
+                      onChange={(e) => setInputContractorPhone(e.target.value)}
+                      placeholder="e.g. 9876543210"
+                      className="w-full p-3 border border-slate-300 dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-900 text-slate-850 dark:text-slate-100 font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-sm rounded-xl border-b-4 border-indigo-800 active:translate-y-[2px] active:border-b-2 shadow-[0_3px_0_0_rgba(79,70,229,0.2)] cursor-pointer transition-all duration-75 text-center block"
+                  >
+                    {isHindi ? "लॉगिन करें और प्रवेश करें" : "Login & Enter Portal"}
+                  </button>
+                </form>
+
+                {appConfig && appConfig.users && appConfig.users.length > 0 && (
+                  <div className="pt-4 border-t border-slate-100 dark:border-slate-850 space-y-3">
+                    <span className="block text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                      {isHindi ? "मौजूदा प्रोफ़ाइल / कारपेंटर से जुड़े" : "Or Switch to Existing Profile"}
+                    </span>
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                      {appConfig.users.map((u) => {
+                        const isCurrent = u.id === appConfig.activeUserId;
+                        return (
+                          <button
+                            key={u.id}
+                            onClick={() => handleSwitchProfile(u.id)}
+                            className={`w-full p-3 rounded-xl border flex items-center justify-between text-left transition-all ${
+                              isCurrent 
+                                ? "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800" 
+                                : "bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border-slate-200 dark:border-slate-800"
+                            }`}
+                          >
+                            <div>
+                              <span className="block text-xs font-black text-slate-800 dark:text-slate-200">
+                                {u.name}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {isHindi ? "अंतिम सक्रिय: " : "Last active: "}
+                                {new Date(u.lastActive).toLocaleDateString()}
+                              </span>
+                            </div>
+                            {isCurrent && (
+                              <span className="text-[9px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold uppercase">
+                                {isHindi ? "सक्रिय" : "Active"}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-850 text-center">
+                  {!showCreateProfile ? (
+                    <button
+                      onClick={() => setShowCreateProfile(true)}
+                      className="text-xs font-black text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      + {isHindi ? "नया ठेकेदार प्रोफाइल बनाएं" : "Create New Contractor Profile"}
+                    </button>
+                  ) : (
+                    <form onSubmit={handleCreateNewProfileAndLogin} className="space-y-3 mt-2 text-left">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase">
+                        {isHindi ? "नया प्रोफ़ाइल का नाम" : "New Contractor Profile Name"}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          required
+                          value={newProfileName}
+                          onChange={(e) => setNewProfileName(e.target.value)}
+                          placeholder="e.g. Sunil Builders"
+                          className="flex-1 p-2 border border-slate-200 dark:border-slate-800 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                        />
+                        <button
+                          type="submit"
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl transition-all"
+                        >
+                          {isHindi ? "बनाएं" : "Create"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateProfile(false)}
+                          className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-500 rounded-xl text-xs"
+                        >
+                          {isHindi ? "रद्द" : "Cancel"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* TAB 1: CONTRACTOR DASHBOARD */}
+              {activeTab === "contractor" && (
+                <div className="space-y-6">
+
+                  {/* Encryption Vault Setup Card */}
+                  <div className="bg-white dark:bg-slate-950 p-5 rounded-3xl border border-slate-200 dark:border-slate-850 shadow-sm space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl flex items-center justify-center border border-indigo-100 dark:border-indigo-900/30">
+                        <span className="text-xl">🛡️</span>
+                      </div>
+                      <div>
+                        <h4 className="font-black text-xs sm:text-sm text-slate-850 dark:text-slate-100">
+                          {isHindi ? "गोपनीयता लॉक और डेटा तिजोरी (Privacy Lock Vault)" : "Privacy & Data Vault"}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {isHindi 
+                            ? "अपने मजदूरों के हाजिरी, एडवांस एवं सैलरी रिकॉर्ड्स को सिमेट्रिक पासकोड से लॉक करें।" 
+                            : "Secure and symmetric-encrypt carpenter wages, advances and attendance sheets with a 4-digit passcode."}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {!propAttendanceData.isEncrypted ? (
+                      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+                        <input
+                          type="password"
+                          maxLength={4}
+                          placeholder="e.g. 1234"
+                          className="bg-slate-50 dark:bg-slate-900 border border-slate-250 dark:border-slate-800 px-4 py-2 rounded-xl text-xs font-black text-slate-850 dark:text-slate-100 w-full sm:w-40 text-center tracking-[0.5em] focus:outline-indigo-500"
+                          value={passcodeAttempt}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, "");
+                            setPasscodeAttempt(val);
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            if (passcodeAttempt.length !== 4) {
+                              triggerToast(isHindi ? "कृपया 4-अंकों का पासकोड डालें!" : "Please enter a valid 4-digit passcode!");
+                              return;
+                            }
+                            const sensitive = {
+                              workers: propAttendanceData.workers || [],
+                              records: propAttendanceData.records || []
+                            };
+                            const blob = encryptData(sensitive, passcodeAttempt);
+                            
+                            propOnUpdateData({
+                              contractorName: propAttendanceData.contractorName,
+                              contractorPhone: propAttendanceData.contractorPhone,
+                              workers: [],
+                              records: [],
+                              isEncrypted: true,
+                              encryptedBlob: blob,
+                              passcodeHash: passcodeAttempt
+                            });
+                            setVaultPasscode(passcodeAttempt);
+                            setDecryptedData(sensitive);
+                            setPasscodeAttempt("");
+                            triggerToast(isHindi ? "गोपनीय तिजोरी सक्रिय हो गई!" : "Privacy Vault successfully activated!");
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-550 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer border-b-4 border-indigo-800 active:translate-y-[2px] active:border-b-2"
+                        >
+                          <span>🔒</span> {isHindi ? "गोपनीयता लॉक चालू करें" : "Activate Privacy Lock"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50/50 dark:bg-emerald-950/10 p-3 rounded-2xl border border-emerald-100/50 dark:border-emerald-950/20">
+                        <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                          <span>🔒</span>
+                          {isHindi ? "तिजोरी पासकोड सक्रिय और सुरक्षित है" : "Privacy Vault is Active and Secured"}
+                        </span>
+                        <button
+                          onClick={() => {
+                            if (confirm(isHindi ? "क्या आप गोपनीयता लॉक हटाना चाहते हैं? आपकी फाइलें प्लेन टेक्स्ट में सहेजी जाएंगी।" : "Are you sure you want to disable the privacy lock? Your database will be saved in plaintext.")) {
+                              propOnUpdateData({
+                                contractorName: propAttendanceData.contractorName,
+                                contractorPhone: propAttendanceData.contractorPhone,
+                                workers: decryptedData?.workers || [],
+                                records: decryptedData?.records || [],
+                                isEncrypted: false,
+                                encryptedBlob: undefined,
+                                passcodeHash: undefined
+                              });
+                              setVaultPasscode("");
+                              setDecryptedData(null);
+                              triggerToast(isHindi ? "गोपनीयता लॉक बंद कर दिया गया!" : "Privacy lock deactivated!");
+                            }
+                          }}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 px-3 py-1.5 rounded-lg text-[10px] font-black cursor-pointer border border-rose-200 dark:border-rose-900/30 transition-colors"
+                        >
+                          🔓 {isHindi ? "लॉक बंद करें" : "Disable Lock"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
               
               {/* Overall Monthly stats metrics */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1170,6 +1855,96 @@ export default function AttendanceModal({
                   </div>
                 </div>
               </div>
+
+              {/* Site-wise Activity Tracker (Live Site Tracker) */}
+              {(() => {
+                const siteSummary: { [site: string]: { totalDays: number; workers: Set<string>; coordinates?: { lat: number; lng: number } } } = {};
+                (attendanceData.records || []).forEach(r => {
+                  if (r.date.startsWith(selectedMonth) && (r.status === 'P' || r.status === 'H')) {
+                    const site = r.location?.trim() || (isHindi ? "अनिर्धारित साइट" : "Unspecified Site");
+                    if (!siteSummary[site]) {
+                      siteSummary[site] = { totalDays: 0, workers: new Set(), coordinates: r.coordinates };
+                    }
+                    const val = r.status === 'H' ? 0.5 : 1;
+                    siteSummary[site].totalDays += val;
+                    const worker = (attendanceData.workers || []).find(w => w.id === r.workerId);
+                    if (worker) {
+                      siteSummary[site].workers.add(worker.name);
+                    }
+                    if (r.coordinates) {
+                      siteSummary[site].coordinates = r.coordinates;
+                    }
+                  }
+                });
+
+                return (
+                  <div className="bg-gradient-to-r from-indigo-50 to-slate-50 dark:from-slate-900/60 dark:to-slate-950 p-5 rounded-3xl border border-indigo-100 dark:border-indigo-950 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">📍</span>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800 dark:text-slate-100">
+                            {isHindi ? "साइट-वार गतिविधि ट्रैकर (Live Site Tracker)" : "Site-wise Activity Tracker"}
+                          </h4>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                            {isHindi ? "चुने हुए महीने में सक्रिय कार्य स्थलों का रियल-टाइम ब्यौरा" : "Real-time summary of active carpentry locations for the selected month"}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-lg">
+                        🛰️ {isHindi ? "GPS समर्थित" : "GPS Enabled"}
+                      </span>
+                    </div>
+
+                    {Object.keys(siteSummary).length === 0 ? (
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 py-2 text-center bg-white dark:bg-slate-900/40 rounded-2xl border border-slate-100 dark:border-slate-900">
+                        {isHindi ? "⚠️ इस महीने में किसी भी साइट पर हाजिरी दर्ज नहीं है। हाजिरी विवरण में लोकेशन सेट करें।" : "⚠️ No location records mapped for this month yet. Edit day attendance to set site name."}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {Object.entries(siteSummary).map(([site, summary]) => (
+                          <div key={site} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-850 shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+                            <div>
+                              <div className="flex justify-between items-start">
+                                <span className="text-xs font-black text-slate-850 dark:text-slate-200 truncate max-w-[120px]" title={site}>
+                                  🏗️ {site}
+                                </span>
+                                {summary.coordinates && (
+                                  <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-extrabold flex items-center gap-0.5" title={`${summary.coordinates.lat}, ${summary.coordinates.lng}`}>
+                                    🟢 {isHindi ? "GPS लॉक" : "GPS Locked"}
+                                  </span>
+                                )}
+                              </div>
+                              
+                              <div className="mt-2.5">
+                                <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                                  {summary.totalDays}
+                                </span>
+                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium ml-1">
+                                  {isHindi ? "कुल मैन-डेज़" : "Total Man-days"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-850">
+                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                                {isHindi ? "सक्रिय मजदूर:" : "Team members:"}
+                              </span>
+                              <div className="flex flex-wrap gap-1 max-h-[45px] overflow-y-auto pr-1">
+                                {Array.from(summary.workers).map((name) => (
+                                  <span key={name} className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded">
+                                    {name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Add New Worker Form Trigger */}
               <div className="flex justify-between items-center bg-white dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
@@ -1243,150 +2018,250 @@ export default function AttendanceModal({
                 </div>
               )}
 
-              {/* WORKERS MONTHLY CARDS GRID */}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                {attendanceData.workers?.length > 0 ? (
-                  attendanceData.workers.map((worker) => {
-                    const stats = calculateWorkerMonthStats(worker);
-                    return (
-                      <div
-                        key={worker.id}
-                        className="bg-white dark:bg-slate-950 rounded-3xl p-5 border border-slate-200 dark:border-slate-800/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between"
-                      >
-                        {/* Card Header */}
-                        <div>
-                          <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-850 pb-3">
-                            <div>
-                              <h3 className="text-lg font-black text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
-                                {worker.name}
-                                <span className="text-xs bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900">
-                                  ₹{worker.wage}/{isHindi ? "दिन" : "day"}
-                                </span>
-                              </h3>
-                              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                {worker.phone}
+              {/* Dynamic Filter Chips and WORKERS MONTHLY CARDS GRID */}
+              {(() => {
+                const allWorkers = attendanceData.workers || [];
+                const activeCount = allWorkers.filter(w => {
+                  const stats = calculateWorkerMonthStats(w);
+                  return stats.presentCount > 0 || stats.halfCount > 0;
+                }).length;
+                const leaveCount = allWorkers.filter(w => {
+                  const stats = calculateWorkerMonthStats(w);
+                  return stats.absentCount > 0 || (stats.presentCount === 0 && stats.halfCount === 0 && stats.absentCount === 0);
+                }).length;
+                const paidCount = allWorkers.filter(w => {
+                  const stats = calculateWorkerMonthStats(w);
+                  return stats.totalPaid > 0;
+                }).length;
+                const pendingCount = allWorkers.filter(w => {
+                  const stats = calculateWorkerMonthStats(w);
+                  return stats.netPayable > 0;
+                }).length;
+
+                const filteredWorkers = allWorkers.filter(worker => {
+                  if (workerFilter === "all") return true;
+                  const stats = calculateWorkerMonthStats(worker);
+                  if (workerFilter === "active") {
+                    return stats.presentCount > 0 || stats.halfCount > 0;
+                  }
+                  if (workerFilter === "leave") {
+                    return stats.absentCount > 0 || (stats.presentCount === 0 && stats.halfCount === 0 && stats.absentCount === 0);
+                  }
+                  if (workerFilter === "paid") {
+                    return stats.totalPaid > 0;
+                  }
+                  if (workerFilter === "pending") {
+                    return stats.netPayable > 0;
+                  }
+                  return true;
+                });
+
+                return (
+                  <div className="space-y-4">
+                    {allWorkers.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <button
+                          onClick={() => setWorkerFilter("all")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer border ${
+                            workerFilter === "all"
+                              ? "bg-indigo-600 text-white border-indigo-700 shadow-xs"
+                              : "bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          📋 {isHindi ? "सभी" : "All"} ({allWorkers.length})
+                        </button>
+                        <button
+                          onClick={() => setWorkerFilter("active")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer border ${
+                            workerFilter === "active"
+                              ? "bg-emerald-600 text-white border-emerald-700 shadow-xs"
+                              : "bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          👷‍♂️ {isHindi ? "सक्रिय" : "Active"} ({activeCount})
+                        </button>
+                        <button
+                          onClick={() => setWorkerFilter("leave")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer border ${
+                            workerFilter === "leave"
+                              ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                              : "bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          🏖️ {isHindi ? "छुट्टी / अनुपस्थित" : "On-Leave"} ({leaveCount})
+                        </button>
+                        <button
+                          onClick={() => setWorkerFilter("paid")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer border ${
+                            workerFilter === "paid"
+                              ? "bg-blue-600 text-white border-blue-700 shadow-xs"
+                              : "bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          💸 {isHindi ? "भुगतान किया" : "Paid Advance"} ({paidCount})
+                        </button>
+                        <button
+                          onClick={() => setWorkerFilter("pending")}
+                          className={`px-3 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer border ${
+                            workerFilter === "pending"
+                              ? "bg-rose-600 text-white border-rose-700 shadow-xs"
+                              : "bg-white dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                          }`}
+                        >
+                          ⚠️ {isHindi ? "लंबित" : "Pending Due"} ({pendingCount})
+                        </button>
+                      </div>
+                    )}
+
+                    {/* WORKERS MONTHLY CARDS GRID */}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                      {filteredWorkers.length > 0 ? (
+                        filteredWorkers.map((worker) => {
+                          const stats = calculateWorkerMonthStats(worker);
+                          return (
+                            <div
+                              key={worker.id}
+                              className="bg-white dark:bg-slate-950 rounded-3xl p-5 border border-slate-200 dark:border-slate-800/80 shadow-md hover:shadow-lg transition-all flex flex-col justify-between"
+                            >
+                              {/* Card Header */}
+                              <div>
+                                <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-850 pb-3">
+                                  <div>
+                                    <h3 className="text-lg font-black text-slate-850 dark:text-slate-100 flex items-center gap-1.5">
+                                      {worker.name}
+                                      <span className="text-xs bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900">
+                                        ₹{worker.wage}/{isHindi ? "दिन" : "day"}
+                                      </span>
+                                    </h3>
+                                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                      {worker.phone}
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => setSelectedWorkerForQR(worker)}
+                                      className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg transition-colors border border-indigo-100 dark:border-indigo-900 flex items-center gap-1 text-[10px] font-black cursor-pointer"
+                                      title="Worker setup link"
+                                    >
+                                      <QrCode size={12} />
+                                      {isHindi ? "सेटअप" : "Setup Link"}
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteWorker(worker.id)}
+                                      className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors border border-rose-100 dark:border-rose-950 flex items-center justify-center cursor-pointer"
+                                      title="Delete worker"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Quick Worker stats inside card */}
+                                <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-850 my-3 text-center">
+                                  <div>
+                                    <span className="block text-[10px] font-bold text-slate-500">
+                                      {isHindi ? "कमाया" : "Earned"}
+                                    </span>
+                                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 font-mono">
+                                      ₹{stats.totalEarned}
+                                    </span>
+                                    <span className="block text-[8px] font-semibold text-emerald-600">
+                                      ({stats.presentCount}P • {stats.halfCount}H)
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="block text-[10px] font-bold text-slate-500">
+                                      {isHindi ? "खर्ची" : "Advance"}
+                                    </span>
+                                    <span className="text-xs font-black text-rose-500 font-mono">
+                                      ₹{stats.totalPaid}
+                                    </span>
+                                  </div>
+                                  <div className="border-l border-slate-200 dark:border-slate-800">
+                                    <span className="block text-[10px] font-bold text-slate-500">
+                                      {isHindi ? "कुल देय" : "Net Bal"}
+                                    </span>
+                                    <span className={`text-xs font-black font-mono ${stats.netPayable >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                      ₹{stats.netPayable}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* 30-Day Grid Layout */}
+                                <div>
+                                  <span className="block text-[10px] font-black text-slate-400 mb-2 tracking-wider uppercase">
+                                    {isHindi ? "30-दिन की हाजिरी कार्ड (कैलेंडर)" : "30-Day Attendance Card (Grid)"}
+                                  </span>
+                                  <div className="grid grid-cols-7 sm:grid-cols-10 gap-1.5">
+                                    {datesForMonth.map((dateStr) => {
+                                      const dayNum = parseInt(dateStr.split("-")[2], 10);
+                                      const record = (attendanceData.records || []).find(
+                                        (r) => r.workerId === worker.id && r.date === dateStr
+                                      );
+                                      
+                                      const hasKharchi = record && record.kharchi && record.kharchi > 0;
+                                      const hasLocation = record && record.location;
+
+                                      return (
+                                        <button
+                                          key={dateStr}
+                                          onClick={() => handleOpenEditDay(worker.id, dateStr)}
+                                          className={`relative h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold border transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+                                            record
+                                              ? getStatusBadgeStyles(record.status)
+                                              : "bg-slate-50 hover:bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800"
+                                          }`}
+                                          title={`${dateStr}: ${record ? `Status ${record.status}` : "No entry"}`}
+                                        >
+                                          <span className={`text-[10px] ${record?.status === "A" ? "text-red-600 dark:text-red-400 font-extrabold scale-110 drop-shadow-sm" : ""}`}>
+                                            {dayNum}
+                                          </span>
+                                          {record && (
+                                            <span className={`text-[8px] leading-none absolute top-0.5 right-1 ${record.status === "A" ? "text-red-100 dark:text-red-200 font-black" : ""}`}>
+                                              {record.status}
+                                            </span>
+                                          )}
+
+                                          {/* Indicators */}
+                                          <div className="absolute bottom-0.5 flex gap-0.5 justify-center">
+                                            {hasKharchi && (
+                                              <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" title={`Kharchi ₹${record.kharchi}`} />
+                                            )}
+                                            {hasLocation && (
+                                              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" title={`Site: ${record.location}`} />
+                                            )}
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Helper tip in cards */}
+                              <p className="text-[9px] text-slate-400 mt-3 italic">
+                                * {isHindi ? "तारीख दबाकर हाजिरी, दिहाड़ी, खर्ची और लोकेशन बदलें" : "Click any day square to update daily attendance, custom rate, location or kharchi."}
                               </p>
                             </div>
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => setSelectedWorkerForQR(worker)}
-                                className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg transition-colors border border-indigo-100 dark:border-indigo-900 flex items-center gap-1 text-[10px] font-black"
-                                title="Worker setup link"
-                              >
-                                <QrCode size={12} />
-                                {isHindi ? "सेटअप" : "Setup Link"}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteWorker(worker.id)}
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors border border-rose-100 dark:border-rose-950 flex items-center justify-center"
-                                title="Delete worker"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Quick Worker stats inside card */}
-                          <div className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-850 my-3 text-center">
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-500">
-                                {isHindi ? "कमाया" : "Earned"}
-                              </span>
-                              <span className="text-xs font-black text-slate-800 dark:text-slate-100">
-                                ₹{stats.totalEarned}
-                              </span>
-                              <span className="block text-[8px] font-semibold text-emerald-600">
-                                ({stats.presentCount}P • {stats.halfCount}H)
-                              </span>
-                            </div>
-                            <div>
-                              <span className="block text-[10px] font-bold text-slate-500">
-                                {isHindi ? "खर्ची" : "Advance"}
-                              </span>
-                              <span className="text-xs font-black text-rose-500">
-                                ₹{stats.totalPaid}
-                              </span>
-                            </div>
-                            <div className="border-l border-slate-200 dark:border-slate-800">
-                              <span className="block text-[10px] font-bold text-slate-500">
-                                {isHindi ? "कुल देय" : "Net Bal"}
-                              </span>
-                              <span className={`text-xs font-black ${stats.netPayable >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                ₹{stats.netPayable}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 30-Day Grid Layout */}
-                          <div>
-                            <span className="block text-[10px] font-black text-slate-400 mb-2 tracking-wider uppercase">
-                              {isHindi ? "30-दिन की हाजिरी कार्ड (कैलेंडर)" : "30-Day Attendance Card (Grid)"}
-                            </span>
-                            <div className="grid grid-cols-7 sm:grid-cols-10 gap-1.5">
-                              {datesForMonth.map((dateStr) => {
-                                const dayNum = parseInt(dateStr.split("-")[2], 10);
-                                const record = (attendanceData.records || []).find(
-                                  (r) => r.workerId === worker.id && r.date === dateStr
-                                );
-                                
-                                const hasKharchi = record && record.kharchi && record.kharchi > 0;
-                                const hasLocation = record && record.location;
-
-                                return (
-                                  <button
-                                    key={dateStr}
-                                    onClick={() => handleOpenEditDay(worker.id, dateStr)}
-                                    className={`relative h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold border transition-all hover:scale-105 active:scale-95 ${
-                                      record
-                                        ? getStatusBadgeStyles(record.status)
-                                        : "bg-slate-50 hover:bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800"
-                                    }`}
-                                    title={`${dateStr}: ${record ? `Status ${record.status}` : "No entry"}`}
-                                  >
-                                    <span className={`text-[10px] ${record?.status === "A" ? "text-red-600 dark:text-red-400 font-extrabold scale-110 drop-shadow-sm" : ""}`}>
-                                      {dayNum}
-                                    </span>
-                                    {record && (
-                                      <span className={`text-[8px] leading-none absolute top-0.5 right-1 ${record.status === "A" ? "text-red-100 dark:text-red-200 font-black" : ""}`}>
-                                        {record.status}
-                                      </span>
-                                    )}
-
-                                    {/* Indicators */}
-                                    <div className="absolute bottom-0.5 flex gap-0.5 justify-center">
-                                      {hasKharchi && (
-                                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" title={`Kharchi ₹${record.kharchi}`} />
-                                      )}
-                                      {hasLocation && (
-                                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" title={`Site: ${record.location}`} />
-                                      )}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                          );
+                        })
+                      ) : (
+                        <div className="xl:col-span-2 text-center p-12 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400 w-full">
+                          <Users size={48} className="mx-auto mb-2 text-slate-300" />
+                          <p className="text-sm font-bold">
+                            {isHindi ? "कोई मजदूर नहीं मिला" : "No workers found."}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {allWorkers.length > 0
+                              ? (isHindi ? "चुने हुए फ़िल्टर को बदलें या रीसेट करें।" : "Try changing or resetting your active filter chips.")
+                              : (isHindi ? "नया मजदूर जोड़ें बटन दबाकर शुरुआत करें।" : "Click 'Add Worker' to start tracking daily attendance.")}
+                          </p>
                         </div>
-
-                        {/* Helper tip in cards */}
-                        <p className="text-[9px] text-slate-400 mt-3 italic">
-                          * {isHindi ? "तारीख दबाकर हाजिरी, दिहाड़ी, खर्ची और लोकेशन बदलें" : "Click any day square to update daily attendance, custom rate, location or kharchi."}
-                        </p>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="xl:col-span-2 text-center p-12 bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-400">
-                    <Users size={48} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-bold">
-                      {isHindi ? "कोई मजदूर नहीं मिला" : "No workers added to Hajiri Pilot yet."}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {isHindi ? "नया मजदूर जोड़ें बटन दबाकर शुरुआत करें।" : "Click 'Add Worker' to start tracking daily attendance."}
-                    </p>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* INDIVIDUAL DAY EDIT MODAL / POPUP OVERLAY */}
               {editingDay && (
@@ -1488,8 +2363,15 @@ export default function AttendanceModal({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-black text-slate-600 dark:text-slate-400 mb-1">
-                          {isHindi ? "लोकेशन / साइट नाम" : "Location / Site Name"}
+                        <label className="block text-xs font-black text-slate-600 dark:text-slate-400 mb-1 flex justify-between items-center">
+                          <span>{isHindi ? "लोकेशन / साइट नाम" : "Location / Site Name"}</span>
+                          <button
+                            type="button"
+                            onClick={fetchCurrentLocationCoordinates}
+                            className="text-[9px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-extrabold px-1.5 py-0.5 rounded border border-indigo-150 dark:border-indigo-900 flex items-center gap-1 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer"
+                          >
+                            📍 {editingRecord.coordinates ? (isHindi ? "सत्यापित GPS" : "GPS Verified") : (isHindi ? "GPS टैग करें" : "Tag GPS")}
+                          </button>
                         </label>
                         <div className="relative">
                           <MapPin size={14} className="absolute left-2.5 top-3 text-slate-400" />
@@ -1503,6 +2385,11 @@ export default function AttendanceModal({
                             placeholder="e.g. Okhla Phase-3"
                           />
                         </div>
+                        {editingRecord.coordinates && (
+                          <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold block mt-1 font-mono">
+                            Lat: {editingRecord.coordinates.lat.toFixed(5)}, Lng: {editingRecord.coordinates.lng.toFixed(5)}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1783,6 +2670,107 @@ export default function AttendanceModal({
 
                 {/* Right Column: Shared Cloud Feed & Diagnostic logs */}
                 <div className="lg:col-span-5 flex flex-col gap-6">
+
+                  {/* WhatsApp Group Report & Sync Share Card */}
+                  <div className="bg-white dark:bg-slate-950 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-850 pb-3">
+                      <span className="text-2xl">📢</span>
+                      <div>
+                        <h3 className="font-black text-slate-850 dark:text-slate-100 text-sm">
+                          {isHindi ? "ग्रुप रिपोर्ट व सिंक कोड जनरेटर" : "WhatsApp Group Report & Sync"}
+                        </h3>
+                        <p className="text-[10px] font-medium text-slate-500">
+                          {isHindi ? "मजदूरों की दैनिक/मासिक रिपोर्ट को व्हाट्सएप ग्रुप पर शेयर करें" : "Generate daily/monthly attendance status and shareable sync codes."}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      {/* Date Selector */}
+                      <div className="flex gap-2">
+                        <div className="flex-1 space-y-1">
+                          <label className="block text-[10px] font-black text-slate-500 uppercase">
+                            {isHindi ? "रिपोर्ट की तारीख" : "Select Target Date"}
+                          </label>
+                          <input
+                            type="date"
+                            value={generatorDate}
+                            onChange={(e) => setGeneratorDate(e.target.value)}
+                            className="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-850 dark:text-slate-200 font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Encryption Toggle */}
+                      <div className="flex items-center justify-between p-2 px-3 bg-slate-50 dark:bg-slate-900 border border-slate-150 dark:border-slate-850 rounded-xl">
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-300">
+                            {isHindi ? "डेटा एन्क्रिप्ट (🔒 ताला बंद) करें" : "Encrypt Shareable Code (🔒)"}
+                          </span>
+                          <span className="text-[9px] text-slate-400">
+                            {isHindi ? "व्हाट्सएप ग्रुप पर गुप्त रखने के लिए" : "Encodes summary text with P2P security key"}
+                          </span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isReportP2PEncrypted}
+                          onChange={(e) => setIsReportP2PEncrypted(e.target.checked)}
+                          className="h-4.5 w-4.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => handleGenerateReport("daily")}
+                          className="py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl border-b-4 border-indigo-800 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all duration-75 cursor-pointer text-center"
+                        >
+                          📋 {isHindi ? "दैनिक रिपोर्ट बनाएं" : "Daily Report"}
+                        </button>
+                        <button
+                          onClick={() => handleGenerateReport("monthly")}
+                          className="py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl border-b-4 border-indigo-800 active:translate-y-[2px] active:border-b-2 shadow-sm transition-all duration-75 cursor-pointer text-center"
+                        >
+                          📅 {isHindi ? "मासिक रिपोर्ट" : "Monthly Summary"}
+                        </button>
+                      </div>
+
+                      {/* Output Textbox */}
+                      {generatedReportText && (
+                        <div className="space-y-2 animate-in slide-in-from-top-2 duration-200">
+                          <label className="block text-[10px] font-black text-slate-500 uppercase flex justify-between items-center">
+                            <span>{isHindi ? "जनरेट की गई रिपोर्ट पाठ" : "Generated Text / Sync Code"}</span>
+                            {isReportP2PEncrypted && (
+                              <span className="text-[9px] text-emerald-500 font-bold uppercase">🔒 Encrypted</span>
+                            )}
+                          </label>
+                          <textarea
+                            readOnly
+                            value={generatedReportText}
+                            className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-[11px] font-mono text-slate-300 h-28 focus:outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(generatedReportText);
+                                triggerToast(isHindi ? "रिपोर्ट पाठ क्लिपबोर्ड पर कॉपी किया गया!" : "Report copied to clipboard!");
+                              }}
+                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl border-b-4 border-emerald-800 active:translate-y-[2px] active:border-b-2 transition-all cursor-pointer text-center"
+                            >
+                              🔗 {isHindi ? "टेक्स्ट कॉपी करें" : "Copy to Clipboard"}
+                            </button>
+                            <button
+                              onClick={handleSendReportToWhatsApp}
+                              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 font-extrabold text-xs rounded-xl border border-slate-250 dark:border-slate-800 active:translate-y-[1px] transition-all cursor-pointer text-center"
+                            >
+                              💬 {isHindi ? "ग्रुप पर भेजें" : "Send to Group"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
                   
                   {/* Shared Remote Cloud Feed (Shared Data Source) */}
                   <div className="bg-slate-900 rounded-3xl p-4 border border-slate-850 shadow-xl flex flex-col h-[350px]">
@@ -2073,6 +3061,7 @@ export default function AttendanceModal({
 
                     {isP2PEncryptEnabled && (
                       <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800/80">
+                        
                         <label className="text-[10px] text-slate-500 dark:text-slate-400 block font-bold">
                           🔑 {isHindi ? "समूह गुप्त सुरक्षा कुंजी (Pre-Shared Key)" : "Group Pre-Shared Key"}
                         </label>
@@ -2135,8 +3124,13 @@ export default function AttendanceModal({
               )}
             </div>
           )}
+        </>
+      )}
+    </div>
+  </>
+)}
 
-        </div>
+  </div>
 
         {selectedWorkerForQR && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-in fade-in">
@@ -2177,13 +3171,22 @@ export default function AttendanceModal({
                       ? "मजदूर को यह क्यूआर कोड स्कैन करने दें ताकि वे अपने फोन पर अपनी हाजिरी खुद देख और भर सकें।"
                       : "Let the worker scan this QR code to view and mark their own attendance on their phone."}
                   </p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}?worker=${selectedWorkerForQR.id}`);
+                      alert(isHindi ? 'लिंक कॉपी हो गया!' : 'Link copied to clipboard!');
+                    }}
+                    className="w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-sm font-bold transition-colors cursor-pointer"
+                  >
+                    {isHindi ? "लिंक कॉपी करें" : "Copy Portal Link"}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-      </div>
+
     </div>
   );
 }

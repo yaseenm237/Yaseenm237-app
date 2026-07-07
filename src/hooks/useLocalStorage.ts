@@ -7,7 +7,7 @@ import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
 export function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
   // Retrieve initial state from local storage or use initialValue
-  const [storedValue, setStoredValue] = useState<T>(() => {
+  const readValue = () => {
     try {
       const item = window.localStorage.getItem(key);
       if (item) {
@@ -18,7 +18,13 @@ export function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<S
       console.warn(`Error reading localStorage key "${key}":`, error);
       return initialValue;
     }
-  });
+  };
+
+  const [storedValue, setStoredValue] = useState<T>(readValue);
+
+  useEffect(() => {
+    setStoredValue(readValue());
+  }, [key]);
 
   // Listen to changes and sync to local storage
   useEffect(() => {

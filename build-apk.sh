@@ -109,45 +109,10 @@ fi
 
 # 4. Restoring gradle-wrapper.jar if missing or corrupted
 echo "📦 Step 4: Ensuring Gradle Wrapper is healthy..."
-
-# Try to run the verify-and-fix script with proper TypeScript execution
-if ! npx tsx verify-and-fix.ts 2>/dev/null; then
-  echo "⚠️  TypeScript execution failed or not available. Attempting alternative verification..."
-  
-  # Simple fallback: Check if gradle-wrapper.jar exists
-  JAR_PATH="android/gradle/wrapper/gradle-wrapper.jar"
-  if [ ! -f "$JAR_PATH" ] || [ ! -s "$JAR_PATH" ]; then
-    echo "⚠️  gradle-wrapper.jar missing or empty. Attempting to restore..."
-    mkdir -p "$(dirname "$JAR_PATH")"
-    
-    # Try to download from known good sources
-    DOWNLOAD_SUCCESS=false
-    DOWNLOAD_URLS=(
-      "https://raw.githubusercontent.com/ionic-team/capacitor/main/android/gradle/wrapper/gradle-wrapper.jar"
-      "https://raw.githubusercontent.com/android/sunflower/main/gradle/wrapper/gradle-wrapper.jar"
-      "https://raw.githubusercontent.com/facebook/react-native/main/template/android/gradle/wrapper/gradle-wrapper.jar"
-    )
-    
-    for URL in "${DOWNLOAD_URLS[@]}"; do
-      echo "📡 Attempting download from: $URL"
-      if curl -sSL -f "$URL" -o "$JAR_PATH" 2>/dev/null; then
-        if [ -s "$JAR_PATH" ]; then
-          echo "✅ Successfully downloaded gradle-wrapper.jar"
-          DOWNLOAD_SUCCESS=true
-          break
-        fi
-      fi
-    done
-    
-    if [ "$DOWNLOAD_SUCCESS" = false ]; then
-      echo "❌ Failed to restore gradle-wrapper.jar through any method."
-      exit 1
-    fi
-  else
-    echo "✅ gradle-wrapper.jar exists and is valid"
-  fi
-else
-  echo "✅ Gradle Wrapper verification completed successfully"
+npx tsx verify-and-fix.ts
+if [ $? -ne 0 ]; then
+  echo "❌ Failed to verify or restore gradle-wrapper.jar. Cannot proceed."
+  exit 1
 fi
 
 # 5. Sync assets with Capacitor

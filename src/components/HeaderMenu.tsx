@@ -9,7 +9,8 @@ import {
   Languages,
   Upload,
   ChevronRight,
-  Users
+  Users,
+  UserCircle
 } from 'lucide-react';
 import { Language } from '../types';
 
@@ -19,6 +20,7 @@ interface HeaderMenuProps {
   onOpenCalc: () => void;
   onOpenExport: () => void;
   onOpenAttendance: () => void;
+  onOpenUserSessions: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -33,6 +35,7 @@ export default function HeaderMenu({
   onOpenCalc,
   onOpenExport,
   onOpenAttendance,
+  onOpenUserSessions,
   canUndo,
   canRedo,
   onUndo,
@@ -124,6 +127,19 @@ export default function HeaderMenu({
                   <Users size={16} />
                 </div>
                 <span className="text-sm font-semibold">{isHindi ? 'हाजिरी (Attendance)' : 'Attendance'}</span>
+              </div>
+              <ChevronRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
+            </button>
+
+            <button
+              onClick={() => { onOpenUserSessions(); closeMenu(); }}
+              className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-slate-50 text-slate-700 hover:text-violet-600 group transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-violet-50 text-violet-500 group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                  <UserCircle size={16} />
+                </div>
+                <span className="text-sm font-semibold">{isHindi ? 'यूज़र प्रोफाइल' : 'User Profiles'}</span>
               </div>
               <ChevronRight size={14} className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
             </button>

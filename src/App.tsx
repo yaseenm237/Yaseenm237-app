@@ -19,10 +19,12 @@ import HeaderMenu from './components/HeaderMenu';
 import CabinetDesignerModal from './components/CabinetDesignerModal';
 import AttendanceModal from './components/AttendanceModal';
 import AboutModal from './components/AboutModal';
+import UserSessionsModal from './components/UserSessionsModal';
+import WorkerSelfEntryPortal from './components/WorkerSelfEntryPortal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
 import { decompressPayload } from './utils/shareCompressor';
-import { Material, AttendanceSettings, AttendanceRecord } from './types';
+import { Material, AttendanceSettings, AttendanceRecord, AppConfig, UserProfile } from './types';
 import { 
   Languages, 
   HelpCircle, 
@@ -210,7 +212,7 @@ const INITIAL_PARTS: PartInput[] = [
   }
 ];
 
-const getInitialParts = (): PartInput[] => {
+const getInitialParts = (suffix: string = ''): PartInput[] => {
   try {
     const params = new URLSearchParams(window.location.search);
     const layoutParam = params.get('layout');
@@ -219,19 +221,19 @@ const getInitialParts = (): PartInput[] => {
       if (decompressed && decompressed.parts) return decompressed.parts;
     }
 
-    const session = window.sessionStorage.getItem('carpentry_workspace_session');
+    const session = window.sessionStorage.getItem(`carpentry_workspace_session${suffix}`);
     if (session) {
       const parsed = JSON.parse(session);
       if (parsed.parts) return parsed.parts;
     }
-    const item = window.localStorage.getItem('carpentry_parts');
+    const item = window.localStorage.getItem(`carpentry_parts${suffix}`);
     return item ? JSON.parse(item) : INITIAL_PARTS;
   } catch {
     return INITIAL_PARTS;
   }
 };
 
-const getInitialSettings = (): SheetSettings => {
+const getInitialSettings = (suffix: string = ''): SheetSettings => {
   try {
     const params = new URLSearchParams(window.location.search);
     const layoutParam = params.get('layout');
@@ -240,13 +242,13 @@ const getInitialSettings = (): SheetSettings => {
       if (decompressed && decompressed.settings) return { ...DEFAULT_SETTINGS, ...decompressed.settings };
     }
 
-    const session = window.sessionStorage.getItem('carpentry_workspace_session');
+    const session = window.sessionStorage.getItem(`carpentry_workspace_session${suffix}`);
     let loadedSettings = DEFAULT_SETTINGS;
     if (session) {
       const parsed = JSON.parse(session);
       if (parsed.settings) loadedSettings = { ...DEFAULT_SETTINGS, ...parsed.settings };
     } else {
-      const item = window.localStorage.getItem('carpentry_settings');
+      const item = window.localStorage.getItem(`carpentry_settings${suffix}`);
       if (item) {
         loadedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(item) };
       }
@@ -261,8 +263,16 @@ const getInitialSettings = (): SheetSettings => {
 };
 
 export default function App() {
-  const [language, setLanguage] = useLocalStorage<Language>('carpentry_language', 'English');
-  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>('carpentry_theme', 'light');
+  const [appConfig, setAppConfig] = useLocalStorage<AppConfig>('carpentry_app_config', {
+    users: [{ id: 'default', name: 'Default User', createdAt: Date.now(), lastActive: Date.now() }],
+    activeUserId: 'default'
+  });
+  
+  const activeUserSuffix = appConfig.activeUserId === 'default' ? '' : `_${appConfig.activeUserId}`;
+  const [isUserSessionsOpen, setIsUserSessionsOpen] = useState(false);
+
+  const [language, setLanguage] = useLocalStorage<Language>(`carpentry_language${activeUserSuffix}`, 'English');
+  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>(`carpentry_theme${activeUserSuffix}`, 'light');
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   
   useEffect(() => {
@@ -277,13 +287,14 @@ export default function App() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  const [attendanceData, setAttendanceData] = useLocalStorage<AttendanceSettings>('carpentry_attendance', {
+  const [attendanceData, setAttendanceData] = useLocalStorage<AttendanceSettings>(`carpentry_attendance${activeUserSuffix}`, {
     contractorName: '',
     contractorPhone: '',
     workers: [],
     records: []
   });
   const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
+  const [activeWorkerPortalId, setActiveWorkerPortalId] = useState<string | null>(null);
   
   // Single-source design history state
   const {
@@ -292,11 +303,20 @@ export default function App() {
     undo,
     redo,
     canUndo,
-    canRedo
+    canRedo,
+    reset: resetWorkspace
   } = useHistory<{ parts: PartInput[]; settings: SheetSettings }>({
-    parts: getInitialParts(),
-    settings: getInitialSettings()
+    parts: getInitialParts(activeUserSuffix),
+    settings: getInitialSettings(activeUserSuffix)
   });
+
+  // Re-initialize parts and settings when active user changes
+  useEffect(() => {
+    resetWorkspace({
+      parts: getInitialParts(activeUserSuffix),
+      settings: getInitialSettings(activeUserSuffix)
+    });
+  }, [activeUserSuffix, resetWorkspace]);
 
   const { parts, settings } = workspaceState;
 
@@ -329,6 +349,14 @@ export default function App() {
     const workerAuth = params.get('workerAuth');
     const recordAttendance = params.get('recordAttendance');
     const layoutParam = params.get('layout');
+    const workerPortalId = params.get('worker');
+    
+    if (workerPortalId) {
+      setActiveWorkerPortalId(workerPortalId);
+      // Remove it from URL so refreshing doesn't keep them locked if they don't want to
+      // window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
     
     if (layoutParam) {
       try {
@@ -370,9 +398,9 @@ export default function App() {
   useEffect(() => {
     setAutosaveStatus('saving');
     try {
-      window.localStorage.setItem('carpentry_parts', JSON.stringify(parts));
-      window.localStorage.setItem('carpentry_settings', JSON.stringify(settings));
-      window.sessionStorage.setItem('carpentry_workspace_session', JSON.stringify({ parts, settings }));
+      window.localStorage.setItem(`carpentry_parts${activeUserSuffix}`, JSON.stringify(parts));
+      window.localStorage.setItem(`carpentry_settings${activeUserSuffix}`, JSON.stringify(settings));
+      window.sessionStorage.setItem(`carpentry_workspace_session${activeUserSuffix}`, JSON.stringify({ parts, settings }));
     } catch (error) {
       console.warn("Failed to persist carpentry states:", error);
     }
@@ -382,7 +410,7 @@ export default function App() {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [parts, settings]);
+  }, [parts, settings, activeUserSuffix]);
 
   const [result, setResult] = useState<PackingResult>({
     layouts: [],
@@ -399,7 +427,7 @@ export default function App() {
   const [isReportPreviewOpen, setIsReportPreviewOpen] = useState<boolean>(false);
   const [isCalcOpen, setIsCalcOpen] = useState<boolean>(false);
   const [isSavedFilesOpen, setIsSavedFilesOpen] = useState<boolean>(false);
-  const [savedJobs, setSavedJobs] = useLocalStorage<SavedJob[]>('carpentry_saved_jobs', []);
+  const [savedJobs, setSavedJobs] = useLocalStorage<SavedJob[]>(`carpentry_saved_jobs${activeUserSuffix}`, []);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isFirstMount = useRef(true);
@@ -412,7 +440,7 @@ export default function App() {
       isReportPreviewOpen || 
       isCalcOpen || 
       isSavedFilesOpen || 
-      isAboutOpen || 
+      isAboutOpen || isUserSessionsOpen || 
       isAttendanceOpen || 
       isSettingsOpen || 
       isCabinetDesignerOpen;
@@ -523,7 +551,7 @@ export default function App() {
       const comp = compareAlgorithms(parts, settings);
       setCompareResults(comp);
     }
-  }, [parts, settings]);
+  }, [parts, settings, activeUserSuffix]);
 
   const handleLanguageToggle = () => {
     setLanguage(prev => prev === 'English' ? 'Hindi' : 'English');
@@ -918,6 +946,7 @@ export default function App() {
             onOpenCalc={() => setIsCalcOpen(true)}
             onOpenExport={() => setIsExportOpen(true)}
             onOpenAttendance={() => setIsAttendanceOpen(true)}
+            onOpenUserSessions={() => setIsUserSessionsOpen(true)}
             canUndo={canUndo}
             canRedo={canRedo}
             onUndo={handleUndo}
@@ -934,6 +963,8 @@ export default function App() {
         language={language}
         attendanceData={attendanceData}
         onUpdateData={setAttendanceData}
+        appConfig={appConfig}
+        onUpdateAppConfig={setAppConfig}
       />
 
       {/* Main Grid Workspace - Bento Grid Layout */}
@@ -1202,6 +1233,9 @@ export default function App() {
           });
         }}
         language={language}
+        onUpdateJob={(updatedJob) => {
+          setSavedJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+        }}
       />
 
       {/* About App Modal */}
@@ -1210,6 +1244,22 @@ export default function App() {
         onClose={() => setIsAboutOpen(false)}
         isHindi={isHindi}
       />
+      
+      {isUserSessionsOpen && (
+        <UserSessionsModal
+          appConfig={appConfig}
+          onUpdateAppConfig={setAppConfig}
+          onClose={() => setIsUserSessionsOpen(false)}
+          language={language}
+        />
+      )}
+
+      {activeWorkerPortalId && (
+        <WorkerSelfEntryPortal 
+          workerId={activeWorkerPortalId} 
+          language={language} 
+        />
+      )}
 
       {/* Toast Notification Container */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
