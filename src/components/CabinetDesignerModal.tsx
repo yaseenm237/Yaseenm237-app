@@ -151,23 +151,18 @@ export default function CabinetDesignerModal({
     })));
   };
 
-  // Compile final wood pieces cutlist
-  const handleGenerateParts = () => {
-    const list: PartInput[] = [];
+  // Dynamic Part Number Assignment & Duplicate Detection Engine
+  const getAssignedNumbers = () => {
+    const list: { part: Omit<PartInput, 'materialId' | 'edgeMaterialId'>; x: number; y: number; type: string; nodeId?: string }[] = [];
     const p = plyThickness;
 
-    // Helper to generate part with default materials
-    const addPart = (part: Omit<PartInput, 'materialId' | 'edgeMaterialId'>, isBacking = false) => {
-      list.push({
-        ...part,
-        materialId: isBacking ? backMaterialId : mainMaterialId,
-        edgeMaterialId: edgeMaterialId
-      });
+    const addPart = (part: Omit<PartInput, 'materialId' | 'edgeMaterialId'>, x: number, y: number, type: string, nodeId?: string) => {
+      list.push({ part, x, y, type, nodeId });
     };
 
-    // 1. Sides (Left & Right)
+    // 1. Sides
     addPart({
-      id: `cab-side-l-${Date.now()}`,
+      id: 'cab-side-l',
       name: isHindi ? 'अलमारी साइड पैनल (बायाँ)' : 'Cabinet Side Panel (Left)',
       length: height,
       width: depth,
@@ -175,9 +170,10 @@ export default function CabinetDesignerModal({
       allowRot: false,
       quantity: 1,
       edges: { T: true, B: true, L: true, R: false }
-    });
+    }, 0, height / 2, 'left_side');
+
     addPart({
-      id: `cab-side-r-${Date.now()}`,
+      id: 'cab-side-r',
       name: isHindi ? 'अलमारी साइड पैनल (दायाँ)' : 'Cabinet Side Panel (Right)',
       length: height,
       width: depth,
@@ -185,12 +181,12 @@ export default function CabinetDesignerModal({
       allowRot: false,
       quantity: 1,
       edges: { T: true, B: true, L: false, R: true }
-    });
+    }, width, height / 2, 'right_side');
 
-    // 2. Top and Bottom panels (Fits between side panels)
+    // 2. Top & Bottom
     const innerWidth = width - 2 * p;
     addPart({
-      id: `cab-top-${Date.now()}`,
+      id: 'cab-top',
       name: isHindi ? 'अलमारी टॉप पैनल' : 'Cabinet Top Panel',
       length: innerWidth,
       width: depth,
@@ -198,9 +194,10 @@ export default function CabinetDesignerModal({
       allowRot: true,
       quantity: 1,
       edges: { T: true, B: false, L: true, R: true }
-    });
+    }, width / 2, 0, 'top_panel');
+
     addPart({
-      id: `cab-bottom-${Date.now()}`,
+      id: 'cab-bottom',
       name: isHindi ? 'अलमारी बॉटम पैनल' : 'Cabinet Bottom Panel',
       length: innerWidth,
       width: depth,
@@ -208,11 +205,11 @@ export default function CabinetDesignerModal({
       allowRot: true,
       quantity: 1,
       edges: { T: true, B: false, L: true, R: true }
-    });
+    }, width / 2, height, 'bottom_panel');
 
-    // 3. Back Board (usually thin ply, fits full height/width)
+    // 3. Back Board
     addPart({
-      id: `cab-back-${Date.now()}`,
+      id: 'cab-back',
       name: isHindi ? `अलमारी बैक बोर्ड (${backingPly}mm प्लाई)` : `Cabinet Back Board (${backingPly}mm Back)`,
       length: height,
       width: width,
@@ -220,21 +217,20 @@ export default function CabinetDesignerModal({
       allowRot: false,
       quantity: 1,
       edges: { T: false, B: false, L: false, R: false }
-    }, true);
+    }, width / 2, height / 2, 'back_board');
 
-    // 4. Analyzed Shelves, Partitions & Drawers (Recursive)
-    const traverse = (node: CompartmentNode, cw: number, ch: number) => {
+    // 4. Inner recursive
+    const traverse = (node: CompartmentNode, rx: number, ry: number, cw: number, ch: number) => {
       if (node.splitType === 'none') {
         if (node.isDrawer) {
           const dumSide = node.drawerDummySide || 'none';
           const dumW = node.drawerDummyWidth || (unit === 'Inch' ? 1.5 : unit === 'CM' ? 3.5 : 35);
           
           let effCw = cw;
-          // Add Drawer Dummy
           if (dumSide === 'left' || dumSide === 'both') {
             effCw -= p;
             addPart({
-              id: `cab-draw-duml-${Date.now()}-${Math.random()}`,
+              id: `cab-draw-duml-${node.id}`,
               name: isHindi ? 'दराज डमी (Left)' : 'Drawer Dummy (Left)',
               length: ch,
               width: dumW,
@@ -242,12 +238,12 @@ export default function CabinetDesignerModal({
               allowRot: true,
               quantity: 1,
               edges: { T: true, B: false, L: false, R: false }
-            });
+            }, rx + dumW/2, ry + ch/2, 'dummy', node.id);
           }
           if (dumSide === 'right' || dumSide === 'both') {
             effCw -= p;
             addPart({
-              id: `cab-draw-dumr-${Date.now()}-${Math.random()}`,
+              id: `cab-draw-dumr-${node.id}`,
               name: isHindi ? 'दराज डमी (Right)' : 'Drawer Dummy (Right)',
               length: ch,
               width: dumW,
@@ -255,7 +251,7 @@ export default function CabinetDesignerModal({
               allowRot: true,
               quantity: 1,
               edges: { T: true, B: false, L: false, R: false }
-            });
+            }, rx + cw - dumW/2, ry + ch/2, 'dummy', node.id);
           }
 
           const clearance = node.channelClearance || (unit === 'Inch' ? 1 : unit === 'CM' ? 2.5 : 25);
@@ -266,9 +262,9 @@ export default function CabinetDesignerModal({
           const boxW = Math.max(effCw - clearance - (2 * p), 0);
           const innerFrontH = node.drawerInnerFrontH || (unit === 'Inch' ? 3 : unit === 'CM' ? 7 : 70);
 
-          // Drawer Front (Fascia)
+          // Front
           addPart({
-            id: `cab-draw-front-${Date.now()}-${Math.random()}`,
+            id: `cab-draw-front-${node.id}`,
             name: isHindi ? 'दराज फ्रंट पैनल (Drawer Front)' : 'Drawer Front Plate',
             length: fasciaW,
             width: fasciaH,
@@ -276,11 +272,11 @@ export default function CabinetDesignerModal({
             allowRot: false,
             quantity: 1,
             edges: { T: true, B: true, L: true, R: true }
-          });
-          
-          // Drawer Box Sides
+          }, rx + cw/2, ry + ch/2, 'drawer_front', node.id);
+
+          // Sides
           addPart({
-            id: `cab-draw-side-${Date.now()}-${Math.random()}`,
+            id: `cab-draw-side-${node.id}`,
             name: isHindi ? 'दराज साइड बॉक्स (Drawer Side)' : 'Drawer Side Box',
             length: sideL,
             width: sideH,
@@ -288,11 +284,11 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 2,
             edges: { T: true, B: false, L: false, R: false }
-          });
-          
-          // Drawer Box Back
+          }, rx + cw/2, ry + ch/2, 'drawer_side', node.id);
+
+          // Back
           addPart({
-            id: `cab-draw-back-${Date.now()}-${Math.random()}`,
+            id: `cab-draw-back-${node.id}`,
             name: isHindi ? 'दराज बैक बॉक्स (Drawer Back)' : 'Drawer Back Box',
             length: boxW,
             width: sideH,
@@ -300,11 +296,11 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: true, B: false, L: false, R: false }
-          });
+          }, rx + cw/2, ry + ch/2, 'drawer_back', node.id);
 
-          // Drawer Inner Front Strip (Support)
+          // Inner Front
           addPart({
-            id: `cab-draw-front-inner-${Date.now()}-${Math.random()}`,
+            id: `cab-draw-front-inner-${node.id}`,
             name: isHindi ? 'दराज अंदरूनी फ्रंट (Drawer Inner Front)' : 'Drawer Inner Front Strip',
             length: boxW,
             width: innerFrontH,
@@ -312,11 +308,11 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: true, B: false, L: false, R: false }
-          });
-          
-          // Drawer Bottom
+          }, rx + cw/2, ry + ch/2, 'drawer_inner_front', node.id);
+
+          // Bottom
           addPart({
-            id: `cab-draw-bot-${Date.now()}-${Math.random()}`,
+            id: `cab-draw-bot-${node.id}`,
             name: isHindi ? 'दराज का बेस (Drawer Bottom)' : 'Drawer Bottom',
             length: boxW,
             width: sideL,
@@ -324,30 +320,30 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: false, B: false, L: false, R: false }
-          });
+          }, rx + cw/2, ry + ch/2, 'drawer_bottom', node.id);
         }
         return;
       }
-      
+
       if (node.splitType === 'h' && node.child1 && node.child2) {
         const val = node.splitValue || (ch - p) / 2;
         addPart({
-          id: `cab-shelf-${Date.now()}-${Math.random()}`,
+          id: `cab-shelf-${node.id}`,
           name: isHindi ? 'अलमारी शेल्फ (रैक)' : 'Cabinet Shelf Board',
-          length: cw - (unit === 'Inch' ? 0.125 : 3), // slight tolerance
-          width: depth - (unit === 'Inch' ? 0.75 : 18), // set back from doors
+          length: cw - (unit === 'Inch' ? 0.125 : 3),
+          width: depth - (unit === 'Inch' ? 0.75 : 18),
           grain: 'L',
           allowRot: true,
           quantity: 1,
           edges: { T: true, B: false, L: false, R: false }
-        });
-        traverse(node.child1, cw, val);
-        traverse(node.child2, cw, ch - val - p);
+        }, rx + cw/2, ry + val + p/2, 'shelf', node.id);
+        traverse(node.child1, rx, ry, cw, val);
+        traverse(node.child2, rx, ry + val + p, cw, ch - val - p);
       } else if (node.splitType === 'v' && node.child1 && node.child2) {
         const val = node.splitValue || (cw - p) / 2;
         if (node.dividerType === 'dummy') {
           addPart({
-            id: `cab-dummy-${Date.now()}-${Math.random()}`,
+            id: `cab-dummy-${node.id}`,
             name: isHindi ? 'दराज डमी पट्टी (Dummy Packing)' : 'Drawer Dummy Packing Strip',
             length: ch,
             width: node.dummyWidth || (unit === 'Inch' ? 1.5 : unit === 'CM' ? 3.5 : 35),
@@ -355,10 +351,10 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: true, B: false, L: false, R: false }
-          });
+          }, rx + val + p/2, ry + ch/2, 'dummy', node.id);
         } else {
           addPart({
-            id: `cab-partition-${Date.now()}-${Math.random()}`,
+            id: `cab-partition-${node.id}`,
             name: isHindi ? 'खड़ी पार्टीशन पट्टी (Vertical Divider)' : 'Vertical Partition divider',
             length: ch,
             width: depth - (unit === 'Inch' ? 0.5 : 12),
@@ -366,32 +362,136 @@ export default function CabinetDesignerModal({
             allowRot: false,
             quantity: 1,
             edges: { T: true, B: true, L: false, R: false }
-          });
+          }, rx + val + p/2, ry + ch/2, 'partition', node.id);
         }
-        traverse(node.child1, val, ch);
-        traverse(node.child2, cw - val - p, ch);
+        traverse(node.child1, rx, ry, val, ch);
+        traverse(node.child2, rx + val + p, ry, cw - val - p, ch);
       }
     };
-    
-    traverse(rootNode, innerWidth, height - 2 * p);
 
-    // 7. Doors
+    traverse(rootNode, 0, 0, innerWidth, height - 2 * p);
+
+    // 5. Doors
     if (doorsCount > 0 && doorsInfo.count > 0) {
       addPart({
-        id: `cab-door-${Date.now()}`,
-        name: isHindi 
-          ? `अलमारी पल्ला दरवाजा (${doorsCount + ' पल्ले'})` 
-          : `Cabinet Door Shutter (${doorsCount + ' Door'})`,
+        id: 'cab-door',
+        name: isHindi ? `अलमारी पल्ला दरवाजा (${doorsCount} पल्ले)` : `Cabinet Door Shutter (${doorsCount} Door)`,
         length: doorsInfo.h,
         width: doorsInfo.w,
         grain: 'L',
         allowRot: false,
         quantity: doorsInfo.count,
         edges: { T: true, B: true, L: true, R: true }
-      });
+      }, width / 2, height / 2, 'door');
     }
 
-    onAddParts(list);
+    // Numbering logic with duplicate detection
+    const numberedList: { item: typeof list[0]; num: number }[] = [];
+    let current_number = 1;
+
+    const getExistingNumber = (p: typeof list[0]) => {
+      return numberedList.find(nl => {
+        if (nl.item.type !== p.type) return false;
+        const l1 = p.part.length;
+        const w1 = p.part.width;
+        const l2 = nl.item.part.length;
+        const w2 = nl.item.part.width;
+        const matchDirect = Math.abs(l1 - l2) < 0.2 && Math.abs(w1 - w2) < 0.2;
+        const matchSwapped = Math.abs(l1 - w2) < 0.2 && Math.abs(w1 - l2) < 0.2;
+        return matchDirect || matchSwapped;
+      });
+    };
+
+    // 1. Carcass Group
+    const carcassTypes = ['left_side', 'right_side', 'top_panel', 'bottom_panel'];
+    carcassTypes.forEach(t => {
+      const p = list.find(x => x.type === t);
+      if (p) {
+        const dup = getExistingNumber(p);
+        if (dup) {
+          numberedList.push({ item: p, num: dup.num });
+        } else {
+          numberedList.push({ item: p, num: current_number++ });
+        }
+      }
+    });
+
+    // 2. Vertical Partitions Group
+    const partitions = list.filter(x => x.type === 'partition').sort((a, b) => a.x - b.x);
+    partitions.forEach(p => {
+      const dup = getExistingNumber(p);
+      if (dup) {
+        numberedList.push({ item: p, num: dup.num });
+      } else {
+        numberedList.push({ item: p, num: current_number++ });
+      }
+    });
+
+    // 3. Horizontal Shelves Group
+    const shelves = list.filter(x => x.type === 'shelf').sort((a, b) => a.y - b.y);
+    shelves.forEach(p => {
+      const dup = getExistingNumber(p);
+      if (dup) {
+        numberedList.push({ item: p, num: dup.num });
+      } else {
+        numberedList.push({ item: p, num: current_number++ });
+      }
+    });
+
+    // 4. Other Parts (sorted by type, then x, then y)
+    const remaining = list.filter(x => !carcassTypes.includes(x.type) && x.type !== 'partition' && x.type !== 'shelf')
+      .sort((a, b) => {
+        if (a.type !== b.type) return a.type.localeCompare(b.type);
+        if (a.x !== b.x) return a.x - b.x;
+        return a.y - b.y;
+      });
+    
+    remaining.forEach(p => {
+      const dup = getExistingNumber(p);
+      if (dup) {
+        numberedList.push({ item: p, num: dup.num });
+      } else {
+        numberedList.push({ item: p, num: current_number++ });
+      }
+    });
+
+    // Create lookup maps
+    const nodeNumMap: Record<string, number> = {};
+    const carcassNumMap: Record<string, number> = {};
+    const drawerFrontNumMap: Record<string, number> = {};
+
+    numberedList.forEach(nl => {
+      if (nl.item.nodeId) {
+        if (nl.item.type === 'shelf' || nl.item.type === 'partition') {
+          nodeNumMap[nl.item.nodeId] = nl.num;
+        } else if (nl.item.type === 'drawer_front') {
+          drawerFrontNumMap[nl.item.nodeId] = nl.num;
+        }
+      } else {
+        carcassNumMap[nl.item.type] = nl.num;
+      }
+    });
+
+    return { numberedList, nodeNumMap, carcassNumMap, drawerFrontNumMap };
+  };
+
+  // Compile final wood pieces cutlist using smart numbering
+  const handleGenerateParts = () => {
+    const { numberedList } = getAssignedNumbers();
+    
+    const finalParts: PartInput[] = numberedList.map(nl => {
+      const part = { ...nl.item.part } as PartInput;
+      // Make ID fully unique for this generation instance
+      part.id = `${part.id}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      part.partNumber = nl.num;
+      // Assign specific materials based on role
+      const isBacking = nl.item.type === 'back_board';
+      part.materialId = isBacking ? backMaterialId : mainMaterialId;
+      part.edgeMaterialId = edgeMaterialId;
+      return part;
+    });
+
+    onAddParts(finalParts);
     onClose();
   };
 
@@ -1074,6 +1174,7 @@ export default function CabinetDesignerModal({
 
                       {/* Draw interior tree recursively */}
                       {(() => {
+                        const { nodeNumMap, carcassNumMap, drawerFrontNumMap } = getAssignedNumbers();
                         const innerW = width - 2*plyThickness;
                         const innerH = height - 2*plyThickness;
                         const scaleX = 142 / innerW;
@@ -1083,6 +1184,7 @@ export default function CabinetDesignerModal({
                           const isSelected = selectedElementId === node.id;
                           
                           if (node.splitType === 'none') {
+                            const dFrontNum = drawerFrontNumMap[node.id];
                             return (
                               <g key={node.id} onClick={() => setSelectedElementId(node.id)} className="cursor-pointer">
                                 <rect 
@@ -1120,6 +1222,12 @@ export default function CabinetDesignerModal({
                                               y2={19 + fy * scaleY + Math.max(fH * scaleY, 0) / 2} 
                                               stroke="#f59e0b" strokeWidth="1.5" 
                                             />
+                                            {dFrontNum && (
+                                              <g>
+                                                <circle cx={19 + fx * scaleX + Math.max(fW * scaleX, 0) / 2} cy={19 + fy * scaleY + Math.max(fH * scaleY, 0) / 2 - 8} r={4.5} fill="#ea580c" />
+                                                <text x={19 + fx * scaleX + Math.max(fW * scaleX, 0) / 2} y={19 + fy * scaleY + Math.max(fH * scaleY, 0) / 2 - 7.5} fontSize="5" fill="#ffffff" fontWeight="black" textAnchor="middle" dominantBaseline="middle">{dFrontNum}</text>
+                                              </g>
+                                            )}
                                           </g>
                                         );
                                       })()
@@ -1165,6 +1273,7 @@ export default function CabinetDesignerModal({
                           if (node.splitType === 'h' && node.child1 && node.child2) {
                             const val = node.splitValue || (rh - plyThickness) / 2;
                             const yPos = ry + val;
+                            const shelfNum = nodeNumMap[node.id];
                             return (
                               <g key={node.id}>
                                 <rect 
@@ -1186,6 +1295,22 @@ export default function CabinetDesignerModal({
                                     pointerEvents="none"
                                   />
                                 )}
+                                {shelfNum && (
+                                  <g pointerEvents="none">
+                                    <circle cx={19 + rx * scaleX + (rw * scaleX) / 2} cy={19 + yPos * scaleY + (plyThickness * scaleY) / 2} r={3.5} fill="#2563eb" />
+                                    <text
+                                      x={19 + rx * scaleX + (rw * scaleX) / 2}
+                                      y={19 + yPos * scaleY + (plyThickness * scaleY) / 2 + 0.5}
+                                      fill="#ffffff"
+                                      fontSize="4.5"
+                                      fontWeight="black"
+                                      textAnchor="middle"
+                                      dominantBaseline="middle"
+                                    >
+                                      {shelfNum}
+                                    </text>
+                                  </g>
+                                )}
                                 {renderTree(node.child1, rx, ry, rw, val)}
                                 {renderTree(node.child2, rx, yPos + plyThickness, rw, rh - val - plyThickness)}
                               </g>
@@ -1196,6 +1321,7 @@ export default function CabinetDesignerModal({
                             const val = node.splitValue || (rw - plyThickness) / 2;
                             const xPos = rx + val;
                             const isDummy = node.dividerType === 'dummy';
+                            const partitionNum = nodeNumMap[node.id];
                             return (
                               <g key={node.id}>
                                 <rect 
@@ -1217,6 +1343,22 @@ export default function CabinetDesignerModal({
                                     pointerEvents="none"
                                   />
                                 )}
+                                {partitionNum && !isDummy && (
+                                  <g pointerEvents="none">
+                                    <circle cx={19 + xPos * scaleX + (plyThickness * scaleX) / 2} cy={19 + ry * scaleY + (rh * scaleY) / 2} r={3.5} fill="#7c3aed" />
+                                    <text
+                                      x={19 + xPos * scaleX + (plyThickness * scaleX) / 2}
+                                      y={19 + ry * scaleY + (rh * scaleY) / 2 + 0.5}
+                                      fill="#ffffff"
+                                      fontSize="4.5"
+                                      fontWeight="black"
+                                      textAnchor="middle"
+                                      dominantBaseline="middle"
+                                    >
+                                      {partitionNum}
+                                    </text>
+                                  </g>
+                                )}
                                 {renderTree(node.child1, rx, ry, val, rh)}
                                 {renderTree(node.child2, xPos + plyThickness, ry, rw - val - plyThickness, rh)}
                               </g>
@@ -1225,7 +1367,35 @@ export default function CabinetDesignerModal({
                           return null;
                         };
                         
-                        return renderTree(rootNode, 0, 0, innerW, innerH);
+                        return (
+                          <g>
+                            {renderTree(rootNode, 0, 0, innerW, innerH)}
+                            {carcassNumMap['left_side'] && (
+                              <g pointerEvents="none">
+                                <circle cx={17} cy={130} r={5} fill="#059669" stroke="#ffffff" strokeWidth="0.5" />
+                                <text x={17} y={130.5} fontSize="5" fill="#ffffff" fontWeight="black" textAnchor="middle" dominantBaseline="middle">{carcassNumMap['left_side']}</text>
+                              </g>
+                            )}
+                            {carcassNumMap['right_side'] && (
+                              <g pointerEvents="none">
+                                <circle cx={163} cy={130} r={5} fill="#059669" stroke="#ffffff" strokeWidth="0.5" />
+                                <text x={163} y={130.5} fontSize="5" fill="#ffffff" fontWeight="black" textAnchor="middle" dominantBaseline="middle">{carcassNumMap['right_side']}</text>
+                              </g>
+                            )}
+                            {carcassNumMap['top_panel'] && (
+                              <g pointerEvents="none">
+                                <circle cx={90} cy={17} r={5} fill="#059669" stroke="#ffffff" strokeWidth="0.5" />
+                                <text x={90} y={17.5} fontSize="5" fill="#ffffff" fontWeight="black" textAnchor="middle" dominantBaseline="middle">{carcassNumMap['top_panel']}</text>
+                              </g>
+                            )}
+                            {carcassNumMap['bottom_panel'] && (
+                              <g pointerEvents="none">
+                                <circle cx={90} cy={243} r={5} fill="#059669" stroke="#ffffff" strokeWidth="0.5" />
+                                <text x={90} y={243.5} fontSize="5" fill="#ffffff" fontWeight="black" textAnchor="middle" dominantBaseline="middle">{carcassNumMap['bottom_panel']}</text>
+                              </g>
+                            )}
+                          </g>
+                        );
                       })()}
 
                       {/* Sizing tags on blueprint */}

@@ -1,0 +1,15 @@
+{
+  "name": "packing_engine",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "packing_engine_bg.wasm",
+    "packing_engine.js",
+    "packing_engine.d.ts"
+  ],
+  "main": "packing_engine.js",
+  "types": "packing_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

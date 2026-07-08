@@ -388,6 +388,8 @@ export default function CuttingListPanel({
                 <th className="pb-3 w-[80px]">{translations.h_qty}</th>
                 <th className="pb-3 w-[120px]">{translations.h_edges} (T, B, L, R)</th>
                 {hasEdgeMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'एज बैंड टेप' : 'Edge Band'}</th>}
+                <th className="pb-3 w-[120px]">{isHindi ? 'सामने का माइका' : 'Front Mica'}</th>
+                <th className="pb-3 w-[120px]">{isHindi ? 'पीछे का माइका' : 'Back Mica'}</th>
                 <th className="pb-3 w-[80px] text-center"></th>
               </tr>
             </thead>
@@ -396,13 +398,23 @@ export default function CuttingListPanel({
                 <tr key={part.id} className="hover:bg-slate-50/50 transition-colors group">
                   {/* Name */}
                   <td className="py-2.5 pr-2">
-                    <input
-                      type="text"
-                      placeholder={isHindi ? 'पुर्जा' : 'e.g., Side Panel'}
-                      value={part.name}
-                      onChange={(e) => handleRowChange(part.id, 'name', e.target.value)}
-                      className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
-                    />
+                    <div className="flex items-center gap-1.5 w-full">
+                      {part.partNumber && (
+                        <span 
+                          className="px-1.5 py-0.5 text-[9px] font-black bg-indigo-50 border border-indigo-200 text-indigo-700 rounded select-none shrink-0"
+                          title={isHindi ? `भाग संख्या: ${part.partNumber}` : `Part Number: ${part.partNumber}`}
+                        >
+                          {part.partNumber}
+                        </span>
+                      )}
+                      <input
+                        type="text"
+                        placeholder={isHindi ? 'पुर्जा' : 'e.g., Side Panel'}
+                        value={part.name}
+                        onChange={(e) => handleRowChange(part.id, 'name', e.target.value)}
+                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
+                      />
+                    </div>
                   </td>
 
                   {/* Material */}
@@ -535,6 +547,38 @@ export default function CuttingListPanel({
                       </select>
                     </td>
                   )}
+
+                  {/* Front Mica */}
+                  <td className="py-2.5 pr-2">
+                    <select
+                      value={part.frontLaminateId || ''}
+                      onChange={(e) => handleRowChange(part.id, 'frontLaminateId', e.target.value || undefined)}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none font-medium text-slate-700"
+                    >
+                      <option value="">{isHindi ? 'कोई नहीं' : 'None'}</option>
+                      {settings.sunmicaItems?.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+
+                  {/* Back Mica */}
+                  <td className="py-2.5 pr-2">
+                    <select
+                      value={part.backLaminateId || ''}
+                      onChange={(e) => handleRowChange(part.id, 'backLaminateId', e.target.value || undefined)}
+                      className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none font-medium text-slate-700"
+                    >
+                      <option value="">{isHindi ? 'कोई नहीं' : 'None'}</option>
+                      {settings.sunmicaItems?.map(item => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
 
                   {/* Actions (Holes + Delete) */}
                   <td className="py-2.5 text-center flex items-center justify-center gap-1">

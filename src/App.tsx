@@ -6,45 +6,46 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Language, Unit, PartInput, SheetSettings, PackingResult, AlgoComparison } from './types';
 import { runPacking, compareAlgorithms, convertMmToUnit, convertToMm } from './utils/packer';
+import * as Comlink from 'comlink';
 import { generatePdfReport } from './utils/pdfGenerator';
-import SettingsModal from './components/SettingsModal';
+const SettingsModal = React.lazy(() => import('./components/SettingsModal'));
+const ExportCenterModal = React.lazy(() => import('./components/ExportCenterModal'));
+const ReportPreviewModal = React.lazy(() => import('./components/ReportPreviewModal'));
+const EstimateCalculatorModal = React.lazy(() => import('./components/EstimateCalculatorModal'));
+const SavedFilesModal = React.lazy(() => import('./components/SavedFilesModal'));
+const CabinetDesignerModal = React.lazy(() => import('./components/CabinetDesignerModal'));
+const AttendanceModal = React.lazy(() => import('./components/AttendanceModal'));
+const AboutModal = React.lazy(() => import('./components/AboutModal'));
+const UserSessionsModal = React.lazy(() => import('./components/UserSessionsModal'));
+const WorkerSelfEntryPortal = React.lazy(() => import('./components/WorkerSelfEntryPortal'));
 import CuttingListPanel from './components/CuttingListPanel';
 import LayoutVisualizerPanel from './components/LayoutVisualizerPanel';
-import ExportCenterModal from './components/ExportCenterModal';
-import ReportPreviewModal from './components/ReportPreviewModal';
-import EstimateCalculatorModal from './components/EstimateCalculatorModal';
-import SavedFilesModal, { SavedJob } from './components/SavedFilesModal';
 import ToastContainer, { ToastMessage } from './components/Toast';
 import HeaderMenu from './components/HeaderMenu';
-import CabinetDesignerModal from './components/CabinetDesignerModal';
-import AttendanceModal from './components/AttendanceModal';
-import AboutModal from './components/AboutModal';
-import UserSessionsModal from './components/UserSessionsModal';
-import WorkerSelfEntryPortal from './components/WorkerSelfEntryPortal';
+import { SavedJob } from './components/SavedFilesModal';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
 import { decompressPayload } from './utils/shareCompressor';
 import { Material, AttendanceSettings, AttendanceRecord, AppConfig, UserProfile } from './types';
-import { 
-  Languages, 
-  HelpCircle, 
-  Layers, 
-  Sparkles, 
-  TrendingUp, 
-  CheckCircle, 
-  Flame, 
-  Award, 
-  Hammer, 
-  RefreshCw,
-  Undo2,
-  Redo2,
-  Settings,
-  Calculator,
-  Folder,
-  Sun,
-  Moon,
-  Info
-} from 'lucide-react';
+import Languages from 'lucide-react/dist/esm/icons/languages';
+import HelpCircle from 'lucide-react/dist/esm/icons/help-circle';
+import Loader2 from "lucide-react/dist/esm/icons/loader-2";
+import Layers from 'lucide-react/dist/esm/icons/layers';
+import Sparkles from 'lucide-react/dist/esm/icons/sparkles';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up';
+import CheckCircle from 'lucide-react/dist/esm/icons/check-circle';
+import Flame from 'lucide-react/dist/esm/icons/flame';
+import Award from 'lucide-react/dist/esm/icons/award';
+import Hammer from 'lucide-react/dist/esm/icons/hammer';
+import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw';
+import Undo2 from 'lucide-react/dist/esm/icons/undo-2';
+import Redo2 from 'lucide-react/dist/esm/icons/redo-2';
+import Settings from 'lucide-react/dist/esm/icons/settings';
+import Calculator from 'lucide-react/dist/esm/icons/calculator';
+import Folder from 'lucide-react/dist/esm/icons/folder';
+import Sun from 'lucide-react/dist/esm/icons/sun';
+import Moon from 'lucide-react/dist/esm/icons/moon';
+import Info from 'lucide-react/dist/esm/icons/info';
 
 const TRANSLATIONS = {
   English: {
@@ -173,6 +174,11 @@ const DEFAULT_SETTINGS: SheetSettings = {
   edgeBandItems: [
     { id: 'edge-white', name: 'White 0.8mm Edge Band', thickness: 0.8 },
     { id: 'edge-wood', name: 'Woodgrain 2mm Edge Band', thickness: 2.0 }
+  ],
+  sunmicaItems: [
+    { id: 'mica-white-gloss', name: '0.8mm Glossy White (सफ़ेद चमकदार)', thickness: 0.8, cost: 12.0 },
+    { id: 'mica-wooden-texture', name: '1.0mm Woodgrain Texture (लकड़ी का टेक्सचर)', thickness: 1.0, cost: 18.0 },
+    { id: 'mica-liner-offwhite', name: '0.6mm Off-White Liner (लाइनर माइका)', thickness: 0.6, cost: 8.0 }
   ]
 };
 
@@ -255,6 +261,9 @@ const getInitialSettings = (suffix: string = ''): SheetSettings => {
     }
     if (!loadedSettings.stockItems || loadedSettings.stockItems.length === 0) {
       loadedSettings.stockItems = [ ...DEFAULT_SETTINGS.stockItems! ];
+    }
+    if (!loadedSettings.sunmicaItems || loadedSettings.sunmicaItems.length === 0) {
+      loadedSettings.sunmicaItems = [ ...DEFAULT_SETTINGS.sunmicaItems! ];
     }
     return loadedSettings;
   } catch {
@@ -423,6 +432,7 @@ export default function App() {
   });
   const [compareResults, setCompareResults] = useState<AlgoComparison[] | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isReportPreviewOpen, setIsReportPreviewOpen] = useState<boolean>(false);
   const [isCalcOpen, setIsCalcOpen] = useState<boolean>(false);
@@ -432,6 +442,18 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const isFirstMount = useRef(true);
   const skipAutosaveToast = useRef(false);
+
+  const workerRef = useRef<Worker | null>(null);
+  const engineRef = useRef<any>(null);
+
+  useEffect(() => {
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = worker;
+    engineRef.current = Comlink.wrap(worker);
+    return () => {
+      worker.terminate();
+    };
+  }, []);
 
   // Lock body scroll when any modal is open to prevent touch scroll leakage to the background panel
   useEffect(() => {
@@ -473,9 +495,8 @@ export default function App() {
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
   }, []);
-
+    }, 4000);
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
@@ -541,17 +562,129 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [parts, settings, isHindi, addToast]);
 
-  // Automatically recalculate cutting list on input changes
-  useEffect(() => {
+  // Manual calculation of cutting list
+  const calculateResult = async () => {
+    // Use worker if ready
+    if (engineRef.current) {
+      setIsCalculating(true);
+      try {
+        const S_L = convertToMm(settings.sheetL, settings.unit);
+        const S_W = convertToMm(settings.sheetW, settings.unit);
+        const binW = Math.max(1.0, S_L - 2 * settings.trimMargin);
+        const binH = Math.max(1.0, S_W - 2 * settings.trimMargin);
+
+        const input = {
+          stock: { length: binW, width: binH },
+          parts: parts.map(p => { 
+             const lMm = convertToMm(p.length, settings.unit);
+             const wMm = convertToMm(p.width, settings.unit);
+             let currentEdgeTh = settings.edgeTh;
+             if (p.edgeMaterialId && settings.edgeBandItems) {
+               const edgeBand = settings.edgeBandItems.find(e => e.id === p.edgeMaterialId);
+               if (edgeBand && edgeBand.thickness !== undefined) {
+                 currentEdgeTh = edgeBand.thickness;
+               }
+             }
+             const dL = (Number(p.edges?.T || false) + Number(p.edges?.B || false)) * currentEdgeTh;
+             const dW = (Number(p.edges?.L || false) + Number(p.edges?.R || false)) * currentEdgeTh;
+             return {
+               id: p.id,
+               name: p.name || 'Unnamed',
+               length: Math.max(1.0, lMm - dL),
+               width: Math.max(1.0, wMm - dW),
+               quantity: p.quantity
+             };
+          }),
+          settings: { kerf: settings.bladeTh, algo: settings.algorithm }
+        };
+        
+        // Call the Rust engine
+        const wasmRes = await engineRef.current.runPacking(input);
+        
+        if (wasmRes && wasmRes.status === 'success') {
+          // Map Rust results to App's PackingResult type
+          
+          let placedPartsArea = 0;
+          wasmRes.layouts.forEach((l: any) => {
+             l.parts.forEach((p: any) => {
+               const origPart = parts.find(op => op.id === p.id);
+               if (origPart) {
+                  const lMm = convertToMm(origPart.length, settings.unit);
+                  const wMm = convertToMm(origPart.width, settings.unit);
+                  placedPartsArea += (lMm * wMm);
+               }
+             });
+          });
+          
+          const totalStockArea = wasmRes.layouts.length * S_L * S_W;
+          const actualUtilization = totalStockArea > 0 ? (placedPartsArea / totalStockArea) * 100 : 0;
+          const actualWaste = 100 - actualUtilization;
+          
+          let totalPartsArea = 0;
+          input.parts.forEach(p => {
+            totalPartsArea += (p.length * p.width * p.quantity);
+          });
+          
+          const transformedResult: PackingResult = {
+            layouts: wasmRes.layouts.map((l: any) => ({
+              sheetIndex: l.sheet_index,
+              width: l.width,
+              height: l.height,
+              usedArea: l.used_area,
+              totalArea: l.total_area,
+              wastePercent: l.waste_percent,
+              wasteRects: l.waste_rects,
+              parts: l.parts.map((p: any) => {
+                const origPart = parts.find(op => op.id === p.id);
+                const lMm = origPart ? convertToMm(origPart.length, settings.unit) : p.w;
+                const wMm = origPart ? convertToMm(origPart.width, settings.unit) : p.h;
+                return {
+                  id: p.id,
+                  name: p.name,
+                  x: p.x,
+                  y: p.y,
+                  w: p.w,
+                  h: p.h,
+                  isRotated: p.is_rotated,
+                  origL: lMm,
+                  origW: wMm,
+                  cutL: p.is_rotated ? p.h : p.w,
+                  cutW: p.is_rotated ? p.w : p.h,
+                  edges: origPart?.edges || { T:false, B:false, L:false, R:false },
+                  grain: origPart?.grain || 'N',
+                  drillHoles: origPart?.drillHoles
+                };
+              })
+            })),
+            totalSheetsUsed: wasmRes.layouts.length,
+            totalUtilization: actualUtilization,
+            overallWastePercent: actualWaste,
+            totalPartsArea,
+            totalBandingLength: 0, // Computed in UI or later
+            unplacedParts: wasmRes.unplaced_parts.map((p: any) => ({
+              name: p.name,
+              qty: p.quantity
+            }))
+          };
+          setResult(transformedResult);
+          setIsCalculating(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Worker calculation error:", err);
+      } finally {
+        setIsCalculating(false);
+      }
+    }
+
     const updatedResult = runPacking(parts, settings);
     setResult(updatedResult);
 
-    // If algorithm comparisons exist, refresh them too
     if (compareResults) {
       const comp = compareAlgorithms(parts, settings);
       setCompareResults(comp);
     }
-  }, [parts, settings, activeUserSuffix]);
+  };
 
   const handleLanguageToggle = () => {
     setLanguage(prev => prev === 'English' ? 'Hindi' : 'English');
@@ -911,6 +1044,15 @@ export default function App() {
               </>
             )}
           </div>
+          
+          <button
+            onClick={calculateResult}
+            disabled={isCalculating}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isCalculating ? <Loader2 size={16} className="animate-spin" /> : <Layers size={16} />}
+            {isCalculating ? (isHindi ? 'गणना जारी...' : 'Calculating...') : (isHindi ? 'लेआउट बनाएं' : 'Optimize Layout')}
+          </button>
 
           {/* 2D Almirah Designer Button */}
           <button
@@ -1001,17 +1143,19 @@ export default function App() {
           </div>
         </aside>
 
-        {isSettingsOpen && (
-          <SettingsModal
-            settings={settings}
-            onChange={setSettings}
-            onClose={() => setIsSettingsOpen(false)}
-            language={language}
-            savedJobs={savedJobs}
-            activeJobId={activeJobId}
-            onSaveToJob={handleUpdateJobSettings}
-          />
-        )}
+        <React.Suspense fallback={null}>
+          {isSettingsOpen && (
+            <SettingsModal
+              settings={settings}
+              onChange={setSettings}
+              onClose={() => setIsSettingsOpen(false)}
+              language={language}
+              savedJobs={savedJobs}
+              activeJobId={activeJobId}
+              onSaveToJob={handleUpdateJobSettings}
+            />
+          )}
+        </React.Suspense>
 
         {/* Main Content Area - Bento Area */}
         <div id="main-workspace" className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
@@ -1129,7 +1273,17 @@ export default function App() {
           </section>
 
           {/* Results & Visualization Card - Bento Cell */}
-          <section id="bento-visualizer" className="flex flex-col">
+          <section id="bento-visualizer" className="flex flex-col relative">
+            {isCalculating && (
+              <div className="absolute inset-0 z-10 bg-white/60 dark:bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center rounded-2xl transition-all">
+                <div className="flex flex-col items-center gap-3 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700">
+                  <RefreshCw className="animate-spin text-indigo-600 dark:text-indigo-400" size={32} />
+                  <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                    {isHindi ? 'ब्लैक-बॉक्स इंजन गणना कर रहा है...' : 'Black-Box Engine Calculating...'}
+                  </span>
+                </div>
+              </div>
+            )}
             {parts.length > 0 && parts.some(p => p.quantity > 0 && p.length > 0 && p.width > 0) ? (
               <LayoutVisualizerPanel
                 result={result}
@@ -1160,106 +1314,108 @@ export default function App() {
       </main>
 
       {/* Centralized Export Center Modal */}
-      <ExportCenterModal
-        isOpen={isExportOpen}
-        onClose={() => setIsExportOpen(false)}
-        onExportCsv={handleExportCsv}
-        onExportJson={handleExportJson}
-        onExportCNC={handleExportCNC}
-        onPrint={handlePrint}
-        onOpenReportPreview={() => setIsReportPreviewOpen(true)}
-        isHindi={isHindi}
-        translations={t}
-        partsCount={parts.reduce((acc, p) => acc + (p.quantity || 0), 0)}
-        sheetsCount={result?.totalSheetsUsed || 0}
-        utilization={result?.totalUtilization || 0}
-        parts={parts}
-        settings={settings}
-      />
+      <React.Suspense fallback={null}>
+        <ExportCenterModal
+          isOpen={isExportOpen}
+          onClose={() => setIsExportOpen(false)}
+          onExportCsv={handleExportCsv}
+          onExportJson={handleExportJson}
+          onExportCNC={handleExportCNC}
+          onPrint={handlePrint}
+          onOpenReportPreview={() => setIsReportPreviewOpen(true)}
+          isHindi={isHindi}
+          translations={t}
+          partsCount={parts.reduce((acc, p) => acc + (p.quantity || 0), 0)}
+          sheetsCount={result?.totalSheetsUsed || 0}
+          utilization={result?.totalUtilization || 0}
+          parts={parts}
+          settings={settings}
+        />
 
-      {/* Blueprint Visual Report & Share Engine */}
-      <ReportPreviewModal
-        isOpen={isReportPreviewOpen}
-        onClose={() => setIsReportPreviewOpen(false)}
-        parts={parts}
-        settings={settings}
-        result={result}
-        isHindi={isHindi}
-        onPrint={handlePrint}
-      />
+        {/* Blueprint Visual Report & Share Engine */}
+        <ReportPreviewModal
+          isOpen={isReportPreviewOpen}
+          onClose={() => setIsReportPreviewOpen(false)}
+          parts={parts}
+          settings={settings}
+          result={result}
+          isHindi={isHindi}
+          onPrint={handlePrint}
+        />
 
-      {/* Estimate Calculator Modal */}
-      {isCalcOpen && (
-        <EstimateCalculatorModal
-          onClose={() => setIsCalcOpen(false)}
+        {/* Estimate Calculator Modal */}
+        {isCalcOpen && (
+          <EstimateCalculatorModal
+            onClose={() => setIsCalcOpen(false)}
+            language={language}
+          />
+        )}
+
+        {/* 2D Cabinet Designer Modal */}
+        <CabinetDesignerModal
+          isOpen={isCabinetDesignerOpen}
+          onClose={() => setIsCabinetDesignerOpen(false)}
           language={language}
+          unit={settings.unit}
+          settings={settings}
+          onAddParts={(newParts) => {
+            setParts(prev => [...prev, ...newParts]);
+            addToast(
+              isHindi 
+                ? 'अलमारी के सभी पुर्जे कटिंग लिस्ट में सफलतापूर्वक जोड़ दिए गए हैं!' 
+                : 'Cabinet panel pieces added to cutting list successfully!', 
+              'success'
+            );
+          }}
         />
-      )}
 
-      {/* 2D Cabinet Designer Modal */}
-      <CabinetDesignerModal
-        isOpen={isCabinetDesignerOpen}
-        onClose={() => setIsCabinetDesignerOpen(false)}
-        language={language}
-        unit={settings.unit}
-        settings={settings}
-        onAddParts={(newParts) => {
-          setParts(prev => [...prev, ...newParts]);
-          addToast(
-            isHindi 
-              ? 'अलमारी के सभी पुर्जे कटिंग लिस्ट में सफलतापूर्वक जोड़ दिए गए हैं!' 
-              : 'Cabinet panel pieces added to cutting list successfully!', 
-            'success'
-          );
-        }}
-      />
-
-      {/* Saved Files Modal */}
-      <SavedFilesModal
-        isOpen={isSavedFilesOpen}
-        onClose={() => setIsSavedFilesOpen(false)}
-        savedJobs={savedJobs}
-        onDeleteJob={(id) => {
-          setSavedJobs(prev => prev.filter(j => j.id !== id));
-          if (activeJobId === id) {
-            setActiveJobId(null);
-          }
-        }}
-        onLoadJob={(job) => {
-          setActiveJobId(job.id);
-          setWorkspaceState({
-            parts: job.parts,
-            settings: job.settings
-          });
-        }}
-        language={language}
-        onUpdateJob={(updatedJob) => {
-          setSavedJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
-        }}
-      />
-
-      {/* About App Modal */}
-      <AboutModal
-        isOpen={isAboutOpen}
-        onClose={() => setIsAboutOpen(false)}
-        isHindi={isHindi}
-      />
-      
-      {isUserSessionsOpen && (
-        <UserSessionsModal
-          appConfig={appConfig}
-          onUpdateAppConfig={setAppConfig}
-          onClose={() => setIsUserSessionsOpen(false)}
+        {/* Saved Files Modal */}
+        <SavedFilesModal
+          isOpen={isSavedFilesOpen}
+          onClose={() => setIsSavedFilesOpen(false)}
+          savedJobs={savedJobs}
+          onDeleteJob={(id) => {
+            setSavedJobs(prev => prev.filter(j => j.id !== id));
+            if (activeJobId === id) {
+              setActiveJobId(null);
+            }
+          }}
+          onLoadJob={(job) => {
+            setActiveJobId(job.id);
+            setWorkspaceState({
+              parts: job.parts,
+              settings: job.settings
+            });
+          }}
           language={language}
+          onUpdateJob={(updatedJob) => {
+            setSavedJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+          }}
         />
-      )}
 
-      {activeWorkerPortalId && (
-        <WorkerSelfEntryPortal 
-          workerId={activeWorkerPortalId} 
-          language={language} 
+        {/* About App Modal */}
+        <AboutModal
+          isOpen={isAboutOpen}
+          onClose={() => setIsAboutOpen(false)}
+          isHindi={isHindi}
         />
-      )}
+        
+        {isUserSessionsOpen && (
+          <UserSessionsModal
+            appConfig={appConfig}
+            onUpdateAppConfig={setAppConfig}
+            onClose={() => setIsUserSessionsOpen(false)}
+            language={language}
+          />
+        )}
+
+        {activeWorkerPortalId && (
+          <WorkerSelfEntryPortal 
+            workerId={activeWorkerPortalId} 
+            language={language} 
+          />
+        )}
+      </React.Suspense>
 
       {/* Toast Notification Container */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

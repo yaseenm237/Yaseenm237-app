@@ -33,7 +33,10 @@ export interface PartInput {
   edges: Edges;
   materialId?: string; // Links to a specific stock material ID
   edgeMaterialId?: string; // Links to a specific edge banding material
+  frontLaminateId?: string; // Links to a specific Sunmica/Laminate material
+  backLaminateId?: string;  // Links to a specific Sunmica/Laminate material
   drillHoles?: DrillHole[];
+  partNumber?: number;
 }
 
 export interface StockItem {
@@ -82,6 +85,13 @@ export interface EdgeBandItem {
   thickness?: number; // Thickness of the edge banding in mm
 }
 
+export interface SunmicaItem {
+  id: string;
+  name: string; // e.g. "Glossy White 1.0mm"
+  thickness?: number; // Thickness in mm (e.g. 1.0, 0.8)
+  cost?: number; // Cost of laminate sheet
+}
+
 export interface SheetSettings {
   unit: Unit;
   sheetL: number;
@@ -94,6 +104,7 @@ export interface SheetSettings {
   sheetCost: number; // Cost per sheet
   stockItems?: StockItem[]; // List of available sheet materials in stock
   edgeBandItems?: EdgeBandItem[]; // List of available edge banding materials
+  sunmicaItems?: SunmicaItem[]; // List of available Sunmica (laminate) materials
 }
 
 export interface PackedPart {
@@ -111,7 +122,10 @@ export interface PackedPart {
   edges: Edges;
   grain: Grain;
   edgeMaterialId?: string;
+  frontLaminateId?: string;
+  backLaminateId?: string;
   drillHoles?: DrillHole[];
+  partNumber?: number;
 }
 
 export interface SheetLayout {

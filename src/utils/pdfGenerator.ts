@@ -264,7 +264,13 @@ export function generatePdfReport(
   doc.setFont('helvetica', 'normal');
   doc.text(`$${settings.sheetCost.toFixed(2)}`, margin + 130 + 24, y + 5);
 
-  y += 16;
+  doc.setFont('helvetica', 'bold');
+  doc.text("Total Banding:", margin + 130, y + 10);
+  doc.setFont('helvetica', 'normal');
+  const bandingMeters = (result.totalBandingLength / 1000).toFixed(2);
+  doc.text(`${bandingMeters} meters`, margin + 130 + 24, y + 10);
+
+  y += 20;
 
   // Primary Cutting List Table
   doc.setFont('helvetica', 'bold');
@@ -309,7 +315,7 @@ export function generatePdfReport(
     
     // Create a key based on identical properties, ignoring names for grouping if everything else is identical
     const edgesKey = [p.edges.T, p.edges.B, p.edges.L, p.edges.R].join('-');
-    const key = `${p.length}x${p.width}_${p.grain}_${matName}_${edgesKey}`;
+    const key = `${p.length}x${p.width}_${p.grain}_${matName}_${edgesKey}_${p.edgeMaterialId || ''}`;
     
     if (!groupedGlobalParts.has(key)) {
       groupedGlobalParts.set(key, { ...p, totalQty: 0, displayNames: new Set() });
@@ -379,13 +385,20 @@ export function generatePdfReport(
     doc.text(grainStr, margin + 120, y + 4.5);
 
     // Edges T B L R
-    const edgesText = [
+    let edgesText = [
       part.edges.T ? 'Top' : '',
       part.edges.B ? 'Bot' : '',
       part.edges.L ? 'Left' : '',
       part.edges.R ? 'Right' : ''
     ].filter(Boolean).join(', ') || 'None';
-    doc.text(edgesText, margin + 145, y + 4.5);
+    
+    if (edgesText !== 'None' && part.edgeMaterialId && settings.edgeBandItems) {
+      const eb = settings.edgeBandItems.find((e: any) => e.id === part.edgeMaterialId);
+      if (eb) {
+        edgesText = `${edgesText} - ${eb.name}`;
+      }
+    }
+    doc.text(sanitizeText(edgesText), margin + 145, y + 4.5);
 
     y += 6.5;
   });

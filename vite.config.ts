@@ -7,8 +7,19 @@ export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
+      alias: [
+        { find: '@', replacement: path.resolve(__dirname, '.') },
+        { find: /^lucide-react$/, replacement: path.resolve(__dirname, 'src/icons.ts') },
+      ],
+    },
+    build: {
+      target: 'esnext',
+      sourcemap: false,
+      minify: false,
+      reportCompressedSize: false,
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        maxParallelFileOps: 2,
       },
     },
     server: {

@@ -54,6 +54,13 @@ export default function LayoutVisualizerPanel({
 }: LayoutVisualizerPanelProps) {
   const isHindi = language === 'Hindi';
 
+  const getSunmicaName = (id?: string) => {
+    if (!id) return '';
+    const item = settings.sunmicaItems?.find(m => m.id === id);
+    if (!item) return '';
+    return item.name.split(' (')[0];
+  };
+
   // Manual Puzzle / Override states
   const [customLayoutOverrides, setCustomLayoutOverrides] = useState<Record<number, SheetLayout>>({});
   const [editingSheetIndex, setEditingSheetIndex] = useState<number | null>(null);
@@ -1397,48 +1404,62 @@ export default function LayoutVisualizerPanel({
                               />
                             )}
 
-                            {/* Text Labels inside Part */}
-                            {drawW > 45 && drawH > 25 ? (
-                              <>
-                                <text 
-                                  x={partX + drawW / 2} 
-                                  y={partY + drawH / 2 - 3} 
-                                  textAnchor="middle" 
-                                  dominantBaseline="middle"
-                                  fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
-                                  fontSize={Math.min(11, drawW / 6)} 
-                                  fontWeight="bold"
-                                  className="select-none pointer-events-none"
-                                >
-                                  {part.name}
-                                </text>
-                                <text 
-                                  x={partX + drawW / 2} 
-                                  y={partY + drawH / 2 + 8} 
-                                  textAnchor="middle" 
-                                  dominantBaseline="middle"
-                                  fill={isColliding || isOOB ? "#b91c1c" : "#475569"} 
-                                  fontSize={Math.min(9, drawW / 7)} 
-                                  fontWeight="semibold"
-                                  className="select-none pointer-events-none"
-                                >
-                                  {formatDim(part.origL)} x {formatDim(part.origW)}
-                                </text>
-                              </>
-                            ) : drawW > 25 && drawH > 15 ? (
-                              <text 
-                                x={partX + drawW / 2} 
-                                y={partY + drawH / 2} 
-                                textAnchor="middle" 
-                                dominantBaseline="middle"
-                                fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
-                                fontSize="22" 
-                                fontWeight="bold"
-                                className="select-none pointer-events-none"
-                              >
-                                {part.name.substring(0, 3)}..
-                              </text>
-                            ) : null}
+                             {/* Text Labels inside Part */}
+                             {drawW > 45 && drawH > 25 ? (
+                               <>
+                                 {part.partNumber && (
+                                   <text
+                                     x={partX + drawW / 2}
+                                     y={partY + drawH / 2 - 16}
+                                     textAnchor="middle"
+                                     dominantBaseline="middle"
+                                     fill="#4f46e5"
+                                     fontSize={Math.min(16, drawW / 5)}
+                                     fontWeight="black"
+                                     className="select-none pointer-events-none font-mono"
+                                   >
+                                     No. {part.partNumber}
+                                   </text>
+                                 )}
+                                 <text 
+                                   x={partX + drawW / 2} 
+                                   y={partY + drawH / 2 + (part.partNumber ? 2 : -3)} 
+                                   textAnchor="middle" 
+                                   dominantBaseline="middle"
+                                   fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
+                                   fontSize={Math.min(12, drawW / 6)} 
+                                   fontWeight="bold"
+                                   className="select-none pointer-events-none"
+                                 >
+                                   {part.name}
+                                 </text>
+                                 <text 
+                                   x={partX + drawW / 2} 
+                                   y={partY + drawH / 2 + (part.partNumber ? 18 : 8)} 
+                                   textAnchor="middle" 
+                                   dominantBaseline="middle"
+                                   fill={isColliding || isOOB ? "#b91c1c" : "#475569"} 
+                                   fontSize={Math.min(10, drawW / 7)} 
+                                   fontWeight="semibold"
+                                   className="select-none pointer-events-none"
+                                 >
+                                   {formatDim(part.origL)} x {formatDim(part.origW)}
+                                 </text>
+                               </>
+                             ) : drawW > 25 && drawH > 15 ? (
+                               <text 
+                                 x={partX + drawW / 2} 
+                                 y={partY + drawH / 2} 
+                                 textAnchor="middle" 
+                                 dominantBaseline="middle"
+                                 fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
+                                 fontSize="22" 
+                                 fontWeight="bold"
+                                 className="select-none pointer-events-none"
+                               >
+                                 {part.partNumber ? `No. ${part.partNumber}` : part.name.substring(0, 3) + '..'}
+                               </text>
+                             ) : null}
 
                             {/* Drill Holes */}
                             {part.drillHoles?.map((hole, hIdx) => {
@@ -1469,7 +1490,7 @@ export default function LayoutVisualizerPanel({
                             <title>
                               {part.name}&#10;
                               {isHindi ? 'तैयार साइज़' : 'Finished Size'}: {formatDim(part.origL)} x {formatDim(part.origW)}&#10;
-                              {isHindi ? 'कटिंग साइज़' : 'Cut Size (Net)'}: {part.cutL.toFixed(1)} x {part.cutW.toFixed(1)} mm&#10;
+                              {isHindi ? 'कटिंग साइज़' : 'Cut Size (Net)'}: {convertMmToUnit(part.cutL, unit).toFixed(1)} x {convertMmToUnit(part.cutW, unit).toFixed(1)} {unit}&#10;
                               {isHindi ? 'एजबेंडिंग' : 'Banding'}: {getEdgeBandingSummary(part.edges, isHindi)}&#10;
                               {isHindi ? 'ग्रेन' : 'Grain'}: {part.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : part.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
                               {isEditingThisSheet && isColliding && `\n⚠️ ${isHindi ? 'ओवरलैप हो रहा है!' : 'Overlaps other parts!'}`}
@@ -1524,47 +1545,47 @@ export default function LayoutVisualizerPanel({
                     {/* 4. Measurement lines (rulers) around the sheet */}
                     {/* Width Ruler (Right side) */}
                     <line 
-                      x1={rawLMm + pad + 10} 
+                      x1={rawLMm + pad + 20} 
                       y1={pad} 
-                      x2={rawLMm + pad + 10} 
+                      x2={rawLMm + pad + 20} 
                       y2={rawWMm + pad} 
-                      stroke="#94a3b8" 
-                      strokeWidth="1" 
+                      stroke="#64748b" 
+                      strokeWidth="2" 
                     />
-                    <path d={`M ${rawLMm + pad + 7} ${pad} L ${rawLMm + pad + 13} ${pad}`} stroke="#94a3b8" strokeWidth="1" />
-                    <path d={`M ${rawLMm + pad + 7} ${rawWMm + pad} L ${rawLMm + pad + 13} ${rawWMm + pad}`} stroke="#94a3b8" strokeWidth="1" />
+                    <path d={`M ${rawLMm + pad + 15} ${pad} L ${rawLMm + pad + 25} ${pad}`} stroke="#64748b" strokeWidth="2" />
+                    <path d={`M ${rawLMm + pad + 15} ${rawWMm + pad} L ${rawLMm + pad + 25} ${rawWMm + pad}`} stroke="#64748b" strokeWidth="2" />
                     <text 
-                      x={rawLMm + pad + 15} 
+                      x={rawLMm + pad + 35} 
                       y={rawWMm / 2 + pad} 
-                      transform={`rotate(90, ${rawLMm + pad + 15}, ${rawWMm / 2 + pad})`}
+                      transform={`rotate(90, ${rawLMm + pad + 35}, ${rawWMm / 2 + pad})`}
                       textAnchor="middle" 
-                      fill="#f8fafc" 
-                      fontSize="9" 
+                      fill="#475569" 
+                      fontSize="24" 
                       fontWeight="bold"
                     >
-                      {S_W} {unit}
+                      {displayW.toFixed(1)} {unit}
                     </text>
 
                     {/* Length Ruler (Bottom side) */}
                     <line 
                       x1={pad} 
-                      y1={rawWMm + pad + 10} 
+                      y1={rawWMm + pad + 20} 
                       x2={rawLMm + pad} 
-                      y2={rawWMm + pad + 10} 
-                      stroke="#94a3b8" 
-                      strokeWidth="1" 
+                      y2={rawWMm + pad + 20} 
+                      stroke="#64748b" 
+                      strokeWidth="2" 
                     />
-                    <path d={`M ${pad} ${rawWMm + pad + 7} L ${pad} ${rawWMm + pad + 13}`} stroke="#94a3b8" strokeWidth="1" />
-                    <path d={`M ${rawLMm + pad} ${rawWMm + pad + 7} L ${rawLMm + pad} ${rawWMm + pad + 13}`} stroke="#94a3b8" strokeWidth="1" />
+                    <path d={`M ${pad} ${rawWMm + pad + 15} L ${pad} ${rawWMm + pad + 25}`} stroke="#64748b" strokeWidth="2" />
+                    <path d={`M ${rawLMm + pad} ${rawWMm + pad + 15} L ${rawLMm + pad} ${rawWMm + pad + 25}`} stroke="#64748b" strokeWidth="2" />
                     <text 
                       x={rawLMm / 2 + pad} 
-                      y={rawWMm + pad + 22} 
+                      y={rawWMm + pad + 45} 
                       textAnchor="middle" 
-                      fill="#f8fafc" 
-                      fontSize="9" 
+                      fill="#475569" 
+                      fontSize="24" 
                       fontWeight="bold"
                     >
-                      {S_L} {unit}
+                      {displayL.toFixed(1)} {unit}
                     </text>
                   </svg>
                   </div>
@@ -1588,7 +1609,7 @@ export default function LayoutVisualizerPanel({
                                 {isHindi ? `चयनित पुर्जा: ${selectedPart.name}` : `Selected Part: ${selectedPart.name}`}
                               </p>
                               <p className="text-[10px] text-indigo-700 font-semibold mt-0.5">
-                                {isHindi ? 'तैयार आकार' : 'Size'}: {formatDim(selectedPart.origL)} x {formatDim(selectedPart.origW)} | {isHindi ? 'स्थिति' : 'Coords'}: X={Math.round(selectedPart.x)}mm, Y={Math.round(selectedPart.y)}mm
+                                {isHindi ? 'तैयार आकार' : 'Size'}: {formatDim(selectedPart.origL)} x {formatDim(selectedPart.origW)} | {isHindi ? 'स्थिति' : 'Coords'}: X={convertMmToUnit(selectedPart.x, unit).toFixed(1)} {unit}, Y={convertMmToUnit(selectedPart.y, unit).toFixed(1)} {unit}
                               </p>
                             </>
                           ) : (
@@ -1635,16 +1656,17 @@ export default function LayoutVisualizerPanel({
                         <tr className="border-b border-slate-100 text-slate-400 font-bold whitespace-nowrap">
                           <th className="pb-2">{translations.h_name}</th>
                           <th className="pb-2">{translations.part_size}</th>
-                          <th className="pb-2">{translations.cut_size} (mm)</th>
+                          <th className="pb-2">{translations.cut_size} ({unit})</th>
                           <th className="pb-2">{translations.h_grain}</th>
                           <th className="pb-2">{translations.applied_banding}</th>
+                          <th className="pb-2">{isHindi ? 'माइका (सामने/पीछे)' : 'Mica (Front/Back)'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
                         {(() => {
                           const groupedParts = new Map<string, any>();
                           layout.parts.forEach(p => {
-                            const key = `${p.name}_${p.origL}_${p.origW}_${p.cutL}_${p.cutW}_${p.grain}_${JSON.stringify(p.edges)}`;
+                            const key = `${p.name}_${p.origL}_${p.origW}_${p.cutL}_${p.cutW}_${p.grain}_${JSON.stringify(p.edges)}_${p.frontLaminateId || ''}_${p.backLaminateId || ''}`;
                             if (groupedParts.has(key)) {
                               groupedParts.get(key)!.qty += 1;
                             } else {
@@ -1659,19 +1681,34 @@ export default function LayoutVisualizerPanel({
                                   className="w-2.5 h-2.5 rounded-full inline-block border border-slate-300"
                                   style={{ backgroundColor: getPartColor(p.name, pIdx) }}
                                 />
-                                {p.name} {p.qty > 1 && <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded-full ml-1">x{p.qty}</span>}
+                                {p.partNumber && (
+                                  <span className="px-1.5 py-0.5 text-[9px] font-black bg-indigo-50 border border-indigo-200 text-indigo-700 rounded select-none shrink-0 mr-1.5">
+                                    No. {p.partNumber}
+                                  </span>
+                                )}
+                                <span className="truncate max-w-[150px]">{p.name}</span> {p.qty > 1 && <span className="text-xs font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded-full ml-1">x{p.qty}</span>}
                               </td>
                               <td className="py-2 text-slate-800 font-semibold">
                                 {formatDim(p.origL)} x {formatDim(p.origW)}
                               </td>
                               <td className="py-2 font-mono text-slate-500">
-                                {p.cutL.toFixed(1)} x {p.cutW.toFixed(1)}
+                                {convertMmToUnit(p.cutL, unit).toFixed(1)} x {convertMmToUnit(p.cutW, unit).toFixed(1)}
                               </td>
                               <td className="py-2">
                                 {p.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : p.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
                               </td>
                               <td className="py-2 text-indigo-600 font-semibold text-[11px]">
                                 {getEdgeBandingSummary(p.edges, isHindi)}
+                              </td>
+                              <td className="py-2 text-emerald-600 font-semibold text-[11px]">
+                                {p.frontLaminateId || p.backLaminateId ? (
+                                  <span className="flex flex-col gap-0.5">
+                                    {p.frontLaminateId && <span>{isHindi ? 'सामने: ' : 'F: '}{getSunmicaName(p.frontLaminateId)}</span>}
+                                    {p.backLaminateId && <span>{isHindi ? 'पीछे: ' : 'B: '}{getSunmicaName(p.backLaminateId)}</span>}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
                               </td>
                             </tr>
                           ));
@@ -1954,10 +1991,13 @@ export default function LayoutVisualizerPanel({
                 const sheetW = fullScreenSheet.width;
                 const sheetH = fullScreenSheet.height;
                 const pad = 45;
-                const rawLMm = convertToMm(sheetW, unit);
-                const rawWMm = convertToMm(sheetH, unit);
+                const rawLMm = sheetW + 2 * T;
+                const rawWMm = sheetH + 2 * T;
                 const svgW = rawLMm + pad * 2;
                 const svgH = rawWMm + pad * 2;
+                
+                const displayL = convertMmToUnit(rawLMm, unit);
+                const displayW = convertMmToUnit(rawWMm, unit);
                 
                 return (
                   <svg 
@@ -2087,15 +2127,15 @@ export default function LayoutVisualizerPanel({
                     <line x1={rawLMm + pad + 10} y1={pad} x2={rawLMm + pad + 10} y2={rawWMm + pad} stroke="#cbd5e1" strokeWidth="2" />
                     <line x1={rawLMm + pad + 5} y1={pad} x2={rawLMm + pad + 15} y2={pad} stroke="#cbd5e1" strokeWidth="2" />
                     <line x1={rawLMm + pad + 5} y1={rawWMm + pad} x2={rawLMm + pad + 15} y2={rawWMm + pad} stroke="#cbd5e1" strokeWidth="2" />
-                    <text x={rawLMm + pad + 25} y={pad + rawWMm / 2} textAnchor="middle" transform={`rotate(-90 ${rawLMm + pad + 25} ${pad + rawWMm / 2})`} fill="#64748b" fontSize="16" fontWeight="bold">
-                      {S_W} {unit}
+                    <text x={rawLMm + pad + 25} y={pad + rawWMm / 2} textAnchor="middle" transform={`rotate(-90 ${rawLMm + pad + 25} ${pad + rawWMm / 2})`} fill="#cbd5e1" fontSize="16" fontWeight="bold">
+                      {displayW.toFixed(1)} {unit}
                     </text>
 
                     <line x1={pad} y1={rawWMm + pad + 10} x2={rawLMm + pad} y2={rawWMm + pad + 10} stroke="#cbd5e1" strokeWidth="2" />
                     <line x1={pad} y1={rawWMm + pad + 5} x2={pad} y2={rawWMm + pad + 15} stroke="#cbd5e1" strokeWidth="2" />
                     <line x1={rawLMm + pad} y1={rawWMm + pad + 5} x2={rawLMm + pad} y2={rawWMm + pad + 15} stroke="#cbd5e1" strokeWidth="2" />
-                    <text x={pad + rawLMm / 2} y={rawWMm + pad + 30} textAnchor="middle" fill="#64748b" fontSize="16" fontWeight="bold">
-                      {S_L} {unit}
+                    <text x={pad + rawLMm / 2} y={rawWMm + pad + 30} textAnchor="middle" fill="#cbd5e1" fontSize="16" fontWeight="bold">
+                      {displayL.toFixed(1)} {unit}
                     </text>
 
                     {/* Parts */}

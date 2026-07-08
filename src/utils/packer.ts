@@ -1106,7 +1106,7 @@ export function runPackingSingleMaterial(
   let totalPartsArea = 0;
   for (const part of flatParts) {
     if (!unplacedPartsMap.has(part.name) || (unplacedPartsMap.get(part.name)?.qty || 0) < flatParts.filter(x => x.name === part.name).length) {
-      totalPartsArea += part.cutL * part.cutW;
+      totalPartsArea += part.origL * part.origW;
     }
   }
 

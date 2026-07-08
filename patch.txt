@@ -1,0 +1,171 @@
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleUndo = useCallback(() => {
+    if (canUndo) {
+      skipAutosaveToast.current = true;
+      undo();
+      addToast(isHindi ? "पूर्ववत (पीछे जाएं) किया गया" : "Undone last change", 'info');
+    }
+  }, [canUndo, undo, isHindi, addToast]);
+
+  const handleRedo = useCallback(() => {
+    if (canRedo) {
+      skipAutosaveToast.current = true;
+      redo();
+      addToast(isHindi ? "रीडू (आगे बढ़ें) किया गया" : "Redone last change", 'info');
+    }
+  }, [canRedo, redo, isHindi, addToast]);
+
+  // Keyboard shortcut support (Ctrl+Z / Ctrl+Y)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (isCmdOrCtrl) {
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            e.preventDefault();
+            handleRedo();
+          } else {
+            e.preventDefault();
+            handleUndo();
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleUndo, handleRedo]);
+
+  // Trigger auto-save toast feedback when parts or settings change (debounced)
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+
+    if (skipAutosaveToast.current) {
+      skipAutosaveToast.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      // Auto-save is now silent as requested
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [parts, settings, isHindi, addToast]);
+
+  // Manual calculation of cutting list
+  const calculateResult = async () => {
+    // Use worker if ready
+    if (engineRef.current) {
+      setIsCalculating(true);
+      try {
+        const S_L = convertToMm(settings.sheetL, settings.unit);
+        const S_W = convertToMm(settings.sheetW, settings.unit);
+        const binW = Math.max(1.0, S_L - 2 * settings.trimMargin);
+        const binH = Math.max(1.0, S_W - 2 * settings.trimMargin);
+
+        const input = {
+          stock: { length: binW, width: binH },
+          parts: parts.map(p => { 
+             const lMm = convertToMm(p.length, settings.unit);
+             const wMm = convertToMm(p.width, settings.unit);
+             let currentEdgeTh = settings.edgeTh;
+             if (p.edgeMaterialId && settings.edgeBandItems) {
+               const edgeBand = settings.edgeBandItems.find(e => e.id === p.edgeMaterialId);
+               if (edgeBand && edgeBand.thickness !== undefined) {
+                 currentEdgeTh = edgeBand.thickness;
+               }
+             }
+             const dL = (Number(p.edges?.T || false) + Number(p.edges?.B || false)) * currentEdgeTh;
+             const dW = (Number(p.edges?.L || false) + Number(p.edges?.R || false)) * currentEdgeTh;
+             return {
+               id: p.id,
+               name: p.name || 'Unnamed',
+               length: Math.max(1.0, lMm - dL),
+               width: Math.max(1.0, wMm - dW),
+               quantity: p.quantity
+             };
+          }),
+          settings: { kerf: settings.bladeTh, algo: settings.algorithm }
+        };
+        
+        // Call the Rust engine
+        const wasmRes = await engineRef.current.runPacking(input);
+        
+        if (wasmRes && wasmRes.status === 'success') {
+          // Map Rust results to App's PackingResult type
+          let totalPartsArea = 0;
+          input.parts.forEach(p => {
+            totalPartsArea += (p.length * p.width * p.quantity);
+          });
+          
+          const transformedResult: PackingResult = {
+            layouts: wasmRes.layouts.map((l: any) => ({
+              sheetIndex: l.sheet_index,
+              width: l.width,
+              height: l.height,
+              usedArea: l.used_area,
+              totalArea: l.total_area,
+              wastePercent: l.waste_percent,
+              wasteRects: l.waste_rects,
+              parts: l.parts.map((p: any) => {
+                const origPart = parts.find(op => op.id === p.id);
+                const lMm = origPart ? convertToMm(origPart.length, settings.unit) : p.w;
+                const wMm = origPart ? convertToMm(origPart.width, settings.unit) : p.h;
+                return {
+                  id: p.id,
+                  name: p.name,
+                  x: p.x,
+                  y: p.y,
+                  w: p.w,
+                  h: p.h,
+                  isRotated: p.is_rotated,
+                  origL: lMm,
+                  origW: wMm,
+                  cutL: p.is_rotated ? p.h : p.w,
+                  cutW: p.is_rotated ? p.w : p.h,
+                  edges: origPart?.edges || { T:false, B:false, L:false, R:false },
+                  grain: origPart?.grain || 'N',
+                  drillHoles: origPart?.drillHoles
+                };
+              })
+            })),
+            totalSheetsUsed: wasmRes.layouts.length,
+            totalUtilization: 100 - wasmRes.waste_percentage,
+            overallWastePercent: wasmRes.waste_percentage,
+            totalPartsArea,
+            totalBandingLength: 0, // Computed in UI or later
+            unplacedParts: wasmRes.unplaced_parts.map((p: any) => ({
+              name: p.name,
+              qty: p.quantity
+            }))
+          };
+          setResult(transformedResult);
+          setIsCalculating(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Worker calculation error:", err);
+      } finally {
+        setIsCalculating(false);
+      }
+    }
+
+    const updatedResult = runPacking(parts, settings);
+    setResult(updatedResult);
+
+    if (compareResults) {
+      const comp = compareAlgorithms(parts, settings);
+      setCompareResults(comp);
+    }
+  };

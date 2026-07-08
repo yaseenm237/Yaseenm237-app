@@ -317,6 +317,14 @@ export default function ReportPreviewModal({
                               part.edges.L ? 'Left' : '',
                               part.edges.R ? 'Right' : ''
                             ].filter(Boolean).join(', ') || 'None';
+                            
+                            let finalEdgeText = edgesText;
+                            if (edgesText !== 'None' && part.edgeMaterialId && settings.edgeBandItems) {
+                              const eb = settings.edgeBandItems.find((e: any) => e.id === part.edgeMaterialId);
+                              if (eb) {
+                                finalEdgeText = `${edgesText} - ${eb.name}`;
+                              }
+                            }
 
                             let grainStr = "None";
                             if (part.grain === 'L') grainStr = isHindi ? "वर्टिकल रेशे" : "Vertical (L)";
@@ -328,7 +336,7 @@ export default function ReportPreviewModal({
                                 <td className="p-2.5">{part.quantity}</td>
                                 <td className="p-2.5 font-mono">{part.length} x {part.width} {settings.unit}</td>
                                 <td className="p-2.5">{grainStr}</td>
-                                <td className="p-2.5 pr-4 text-indigo-600 font-semibold">{edgesText}</td>
+                                <td className="p-2.5 pr-4 text-indigo-600 font-semibold">{finalEdgeText}</td>
                               </tr>
                             );
                           })}
