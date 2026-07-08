@@ -376,28 +376,48 @@ export default function CuttingListPanel({
             </button>
           </div>
         ) : (
-          <table id="cutlist-table" className="w-full text-left border-collapse min-w-[760px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="pb-3 w-[180px]">{translations.h_name}</th>
-                {hasMultiMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'मटीरियल' : 'Material'}</th>}
-                <th className="pb-3 w-[100px]">{translations.h_l} ({unit})</th>
-                <th className="pb-3 w-[100px]">{translations.h_w} ({unit})</th>
-                <th className="pb-3 w-[110px]">{translations.h_grain}</th>
-                <th className="pb-3 w-[90px]">{translations.allow_rot}</th>
-                <th className="pb-3 w-[80px]">{translations.h_qty}</th>
-                <th className="pb-3 w-[120px]">{translations.h_edges} (T, B, L, R)</th>
-                {hasEdgeMaterials && <th className="pb-3 w-[120px]">{isHindi ? 'एज बैंड टेप' : 'Edge Band'}</th>}
-                <th className="pb-3 w-[120px]">{isHindi ? 'सामने का माइका' : 'Front Mica'}</th>
-                <th className="pb-3 w-[120px]">{isHindi ? 'पीछे का माइका' : 'Back Mica'}</th>
-                <th className="pb-3 w-[80px] text-center"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {parts.map((part) => (
-                <tr key={part.id} className="hover:bg-slate-50/50 transition-colors group">
+          <div 
+            id="cutlist-grid"
+            className="grid gap-y-1 min-w-max pb-4 items-center" 
+            style={{ 
+              gridTemplateColumns: [
+                'minmax(220px, auto)',
+                hasMultiMaterials ? 'minmax(120px, auto)' : null,
+                'minmax(100px, auto)',
+                'minmax(100px, auto)',
+                'minmax(110px, auto)',
+                'minmax(90px, auto)',
+                '80px',
+                'minmax(140px, auto)',
+                hasEdgeMaterials ? 'minmax(140px, auto)' : null,
+                'minmax(140px, auto)',
+                'minmax(140px, auto)',
+                '80px'
+              ].filter(Boolean).join(' ') 
+            }}
+          >
+            {/* Header */}
+            <div className="contents text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_name}</div>
+              {hasMultiMaterials && <div className="pb-3 border-b border-slate-100 px-1">{isHindi ? 'मटीरियल' : 'Material'}</div>}
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_l} ({unit})</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_w} ({unit})</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_grain}</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.allow_rot}</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_qty}</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{translations.h_edges} (T, B, L, R)</div>
+              {hasEdgeMaterials && <div className="pb-3 border-b border-slate-100 px-1">{isHindi ? 'एज बैंड टेप' : 'Edge Band'}</div>}
+              <div className="pb-3 border-b border-slate-100 px-1">{isHindi ? 'सामने का माइका' : 'Front Mica'}</div>
+              <div className="pb-3 border-b border-slate-100 px-1">{isHindi ? 'पीछे का माइका' : 'Back Mica'}</div>
+              <div className="pb-3 border-b border-slate-100 px-1 text-center"></div>
+            </div>
+
+            {/* Body */}
+            {parts.map((part) => (
+              <div key={part.id} className="grid col-span-full items-center hover:bg-slate-50/50 transition-colors p-1 rounded-xl group" style={{ gridTemplateColumns: 'subgrid' }}>
+
                   {/* Name */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <div className="flex items-center gap-1.5 w-full">
                       {part.partNumber && (
                         <span 
@@ -407,19 +427,24 @@ export default function CuttingListPanel({
                           {part.partNumber}
                         </span>
                       )}
-                      <input
-                        type="text"
-                        placeholder={isHindi ? 'पुर्जा' : 'e.g., Side Panel'}
-                        value={part.name}
-                        onChange={(e) => handleRowChange(part.id, 'name', e.target.value)}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
-                      />
+                      <div className="relative inline-grid w-full">
+                        <span className="invisible col-start-1 row-start-1 px-2.5 py-1.5 text-sm whitespace-pre min-w-[140px] w-full">
+                          {part.name || (isHindi ? 'पुर्जा' : 'e.g., Side Panel')}
+                        </span>
+                        <input
+                          type="text"
+                          placeholder={isHindi ? 'पुर्जा' : 'e.g., Side Panel'}
+                          value={part.name}
+                          onChange={(e) => handleRowChange(part.id, 'name', e.target.value)}
+                          className="col-start-1 row-start-1 w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
+                        />
+                      </div>
                     </div>
-                  </td>
+                  </div>
 
                   {/* Material */}
                   {hasMultiMaterials && (
-                    <td className="py-2.5 pr-2">
+                    <div className="py-2.5 pr-2">
                       <select
                         value={part.materialId || ''}
                         onChange={(e) => handleRowChange(part.id, 'materialId', e.target.value || undefined)}
@@ -432,46 +457,56 @@ export default function CuttingListPanel({
                           </option>
                         ))}
                       </select>
-                    </td>
+                    </div>
                   )}
 
                   {/* Length */}
-                  <td className="py-2.5 pr-2">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.1"
-                      placeholder="0.0"
-                      value={part.length || ''}
-                      onChange={(e) => handleRowChange(part.id, 'length', Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
-                    />
-                  </td>
+                  <div className="py-2.5 pr-2">
+                    <div className="relative inline-grid w-full">
+                      <span className="invisible col-start-1 row-start-1 px-2.5 py-1.5 text-sm font-medium whitespace-pre min-w-[80px] w-full">
+                        {part.length || '0.0'}
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.1"
+                        placeholder="0.0"
+                        value={part.length || ''}
+                        onChange={(e) => handleRowChange(part.id, 'length', Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="col-start-1 row-start-1 w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
 
                   {/* Width */}
-                  <td className="py-2.5 pr-2">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.1"
-                      placeholder="0.0"
-                      value={part.width || ''}
-                      onChange={(e) => handleRowChange(part.id, 'width', Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
-                    />
-                  </td>
+                  <div className="py-2.5 pr-2">
+                    <div className="relative inline-grid w-full">
+                      <span className="invisible col-start-1 row-start-1 px-2.5 py-1.5 text-sm font-medium whitespace-pre min-w-[80px] w-full">
+                        {part.width || '0.0'}
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.1"
+                        placeholder="0.0"
+                        value={part.width || ''}
+                        onChange={(e) => handleRowChange(part.id, 'width', Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="col-start-1 row-start-1 w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
 
                   {/* Grain */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <GrainToggle
                       grain={part.grain}
                       onChange={(g) => handleRowChange(part.id, 'grain', g)}
                       isHindi={isHindi}
                     />
-                  </td>
+                  </div>
 
                   {/* Rotation */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <button
                       type="button"
                       disabled={part.grain !== 'N'}
@@ -491,10 +526,10 @@ export default function CuttingListPanel({
                         ? (isHindi ? 'हाँ' : 'On') 
                         : (isHindi ? 'नहीं' : 'Off')}
                     </button>
-                  </td>
+                  </div>
 
                   {/* Quantity */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <input
                       type="number"
                       min="1"
@@ -502,10 +537,10 @@ export default function CuttingListPanel({
                       onChange={(e) => handleRowChange(part.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 text-center font-semibold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
                     />
-                  </td>
+                  </div>
 
                   {/* Edge Banding Selection T, B, L, R */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <div className="flex gap-1 justify-start">
                       {(['T', 'B', 'L', 'R'] as const).map((edge) => (
                         <button
@@ -523,11 +558,11 @@ export default function CuttingListPanel({
                         </button>
                       ))}
                     </div>
-                  </td>
+                  </div>
 
                   {/* Edge Band Material */}
                   {hasEdgeMaterials && (
-                    <td className="py-2.5 pr-2">
+                    <div className="py-2.5 pr-2">
                       <select
                         value={part.edgeMaterialId || ''}
                         disabled={!part.edges.T && !part.edges.B && !part.edges.L && !part.edges.R}
@@ -545,11 +580,11 @@ export default function CuttingListPanel({
                           </option>
                         ))}
                       </select>
-                    </td>
+                    </div>
                   )}
 
                   {/* Front Mica */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <select
                       value={part.frontLaminateId || ''}
                       onChange={(e) => handleRowChange(part.id, 'frontLaminateId', e.target.value || undefined)}
@@ -562,10 +597,10 @@ export default function CuttingListPanel({
                         </option>
                       ))}
                     </select>
-                  </td>
+                  </div>
 
                   {/* Back Mica */}
-                  <td className="py-2.5 pr-2">
+                  <div className="py-2.5 pr-2">
                     <select
                       value={part.backLaminateId || ''}
                       onChange={(e) => handleRowChange(part.id, 'backLaminateId', e.target.value || undefined)}
@@ -578,10 +613,10 @@ export default function CuttingListPanel({
                         </option>
                       ))}
                     </select>
-                  </td>
+                  </div>
 
                   {/* Actions (Holes + Delete) */}
-                  <td className="py-2.5 text-center flex items-center justify-center gap-1">
+                  <div className="py-2.5 text-center flex items-center justify-center gap-1">
                     <button
                       type="button"
                       onClick={() => setEditingHolesFor(part.id)}
@@ -598,11 +633,11 @@ export default function CuttingListPanel({
                     >
                       <Trash2 id={`delete-btn-${part.id}`} size={15} />
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

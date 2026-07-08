@@ -45,6 +45,7 @@ import Layers from 'lucide-react/dist/esm/icons/layers';
 import Layout from 'lucide-react/dist/esm/icons/layout';
 import List from 'lucide-react/dist/esm/icons/list';
 import ListFilter from 'lucide-react/dist/esm/icons/list-filter';
+import Loader2 from 'lucide-react/dist/esm/icons/loader-2';
 import LogOut from 'lucide-react/dist/esm/icons/log-out';
 import Mail from 'lucide-react/dist/esm/icons/mail';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin';
@@ -143,6 +144,7 @@ export {
   Layout,
   List,
   ListFilter,
+  Loader2,
   LogOut,
   Mail,
   MapPin,

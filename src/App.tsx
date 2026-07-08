@@ -27,25 +27,28 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useHistory } from './hooks/useHistory';
 import { decompressPayload } from './utils/shareCompressor';
 import { Material, AttendanceSettings, AttendanceRecord, AppConfig, UserProfile } from './types';
-import Languages from 'lucide-react/dist/esm/icons/languages';
-import HelpCircle from 'lucide-react/dist/esm/icons/help-circle';
-import Loader2 from "lucide-react/dist/esm/icons/loader-2";
-import Layers from 'lucide-react/dist/esm/icons/layers';
-import Sparkles from 'lucide-react/dist/esm/icons/sparkles';
-import TrendingUp from 'lucide-react/dist/esm/icons/trending-up';
-import CheckCircle from 'lucide-react/dist/esm/icons/check-circle';
-import Flame from 'lucide-react/dist/esm/icons/flame';
-import Award from 'lucide-react/dist/esm/icons/award';
-import Hammer from 'lucide-react/dist/esm/icons/hammer';
-import RefreshCw from 'lucide-react/dist/esm/icons/refresh-cw';
-import Undo2 from 'lucide-react/dist/esm/icons/undo-2';
-import Redo2 from 'lucide-react/dist/esm/icons/redo-2';
-import Settings from 'lucide-react/dist/esm/icons/settings';
-import Calculator from 'lucide-react/dist/esm/icons/calculator';
-import Folder from 'lucide-react/dist/esm/icons/folder';
-import Sun from 'lucide-react/dist/esm/icons/sun';
-import Moon from 'lucide-react/dist/esm/icons/moon';
-import Info from 'lucide-react/dist/esm/icons/info';
+import {
+  Languages,
+  HelpCircle,
+  Loader2,
+  Layers,
+  Sparkles,
+  TrendingUp,
+  CheckCircle,
+  Flame,
+  Award,
+  Hammer,
+  RefreshCw,
+  Undo2,
+  Redo2,
+  Settings,
+  Calculator,
+  Folder,
+  Sun,
+  Moon,
+  Info,
+  Play
+} from 'lucide-react';
 
 const TRANSLATIONS = {
   English: {
@@ -495,8 +498,8 @@ export default function App() {
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
     }, 4000);
+  }, []);
   const removeToast = (id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
@@ -562,25 +565,45 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [parts, settings, isHindi, addToast]);
 
+  // Automatically clear layout if there are no valid parts
+  useEffect(() => {
+    const hasValidParts = parts && parts.length > 0 && parts.some(p => p.quantity > 0 && p.length > 0 && p.width > 0);
+    if (!hasValidParts) {
+      setResult({
+        layouts: [],
+        totalSheetsUsed: 0,
+        totalUtilization: 0,
+        overallWastePercent: 0,
+        totalPartsArea: 0,
+        totalBandingLength: 0,
+        unplacedParts: []
+      });
+      setCompareResults(null);
+    }
+  }, [parts]);
+
   // Manual calculation of cutting list
-  const calculateResult = async () => {
+  const calculateResult = async (overrideSettings?: SheetSettings) => {
+    setIsCalculating(true);
+    let success = false;
+    const activeSettings = (overrideSettings && typeof overrideSettings === 'object' && 'unit' in overrideSettings) ? overrideSettings : settings;
+
     // Use worker if ready
     if (engineRef.current) {
-      setIsCalculating(true);
       try {
-        const S_L = convertToMm(settings.sheetL, settings.unit);
-        const S_W = convertToMm(settings.sheetW, settings.unit);
-        const binW = Math.max(1.0, S_L - 2 * settings.trimMargin);
-        const binH = Math.max(1.0, S_W - 2 * settings.trimMargin);
+        const S_L = convertToMm(activeSettings.sheetL, activeSettings.unit);
+        const S_W = convertToMm(activeSettings.sheetW, activeSettings.unit);
+        const binW = Math.max(1.0, S_L - 2 * activeSettings.trimMargin);
+        const binH = Math.max(1.0, S_W - 2 * activeSettings.trimMargin);
 
         const input = {
           stock: { length: binW, width: binH },
           parts: parts.map(p => { 
-             const lMm = convertToMm(p.length, settings.unit);
-             const wMm = convertToMm(p.width, settings.unit);
-             let currentEdgeTh = settings.edgeTh;
-             if (p.edgeMaterialId && settings.edgeBandItems) {
-               const edgeBand = settings.edgeBandItems.find(e => e.id === p.edgeMaterialId);
+             const lMm = convertToMm(p.length, activeSettings.unit);
+             const wMm = convertToMm(p.width, activeSettings.unit);
+             let currentEdgeTh = activeSettings.edgeTh;
+             if (p.edgeMaterialId && activeSettings.edgeBandItems) {
+               const edgeBand = activeSettings.edgeBandItems.find(e => e.id === p.edgeMaterialId);
                if (edgeBand && edgeBand.thickness !== undefined) {
                  currentEdgeTh = edgeBand.thickness;
                }
@@ -595,22 +618,37 @@ export default function App() {
                quantity: p.quantity
              };
           }),
-          settings: { kerf: settings.bladeTh, algo: settings.algorithm }
+          settings: { kerf: activeSettings.bladeTh, algo: activeSettings.algorithm }
         };
+
+        console.log("[App] Preparing and sending input to WASM Worker:", JSON.stringify(input, null, 2));
         
         // Call the Rust engine
         const wasmRes = await engineRef.current.runPacking(input);
+        console.log("[App] Received result from WASM Worker:", JSON.stringify(wasmRes, null, 2));
         
         if (wasmRes && wasmRes.status === 'success') {
           // Map Rust results to App's PackingResult type
+          const findOrigPart = (pId: string) => {
+            let found = parts.find(op => op.id === pId);
+            if (found) return found;
+            const lastUnderscoreIndex = pId.lastIndexOf('_');
+            if (lastUnderscoreIndex !== -1) {
+              const prefix = pId.substring(0, lastUnderscoreIndex);
+              found = parts.find(op => op.id === prefix);
+              if (found) return found;
+            }
+            const firstToken = pId.split('_')[0];
+            return parts.find(op => op.id === firstToken);
+          };
           
           let placedPartsArea = 0;
           wasmRes.layouts.forEach((l: any) => {
              l.parts.forEach((p: any) => {
-               const origPart = parts.find(op => op.id === p.id);
+               const origPart = findOrigPart(p.id);
                if (origPart) {
-                  const lMm = convertToMm(origPart.length, settings.unit);
-                  const wMm = convertToMm(origPart.width, settings.unit);
+                  const lMm = convertToMm(origPart.length, activeSettings.unit);
+                  const wMm = convertToMm(origPart.width, activeSettings.unit);
                   placedPartsArea += (lMm * wMm);
                }
              });
@@ -635,9 +673,9 @@ export default function App() {
               wastePercent: l.waste_percent,
               wasteRects: l.waste_rects,
               parts: l.parts.map((p: any) => {
-                const origPart = parts.find(op => op.id === p.id);
-                const lMm = origPart ? convertToMm(origPart.length, settings.unit) : p.w;
-                const wMm = origPart ? convertToMm(origPart.width, settings.unit) : p.h;
+                const origPart = findOrigPart(p.id);
+                const lMm = origPart ? convertToMm(origPart.length, activeSettings.unit) : p.w;
+                const wMm = origPart ? convertToMm(origPart.width, activeSettings.unit) : p.h;
                 return {
                   id: p.id,
                   name: p.name,
@@ -666,37 +704,69 @@ export default function App() {
               qty: p.quantity
             }))
           };
+          
           setResult(transformedResult);
-          setIsCalculating(false);
-          return;
+          success = true;
+        } else {
+          console.warn("[App] WASM Worker failed or returned non-success status:", wasmRes);
         }
       } catch (err) {
-        console.error("Worker calculation error:", err);
-      } finally {
-        setIsCalculating(false);
+        console.error("[App] Worker calculation error:", err);
       }
     }
 
-    const updatedResult = runPacking(parts, settings);
-    setResult(updatedResult);
+    if (!success) {
+      console.log("[App] Running fallback JS-based packing algorithm...");
+      const updatedResult = runPacking(parts, activeSettings);
+      setResult(updatedResult);
 
-    if (compareResults) {
-      const comp = compareAlgorithms(parts, settings);
-      setCompareResults(comp);
+      if (compareResults) {
+        const comp = compareAlgorithms(parts, activeSettings);
+        setCompareResults(comp);
+      }
     }
+
+    setIsCalculating(false);
   };
 
   const handleLanguageToggle = () => {
     setLanguage(prev => prev === 'English' ? 'Hindi' : 'English');
   };
 
-  const handleCompareAlgos = () => {
+  const handleCompareAlgos = async () => {
     setIsComparing(true);
-    setTimeout(() => {
+    // short delay to show loading state
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
       const comp = compareAlgorithms(parts, settings);
       setCompareResults(comp);
+      
+      // Find the winner algorithm that uses the least sheets and has highest efficiency
+      const best = [...comp].sort((a, b) => {
+        if (a.unplacedCount !== b.unplacedCount) return a.unplacedCount - b.unplacedCount;
+        if (a.sheetsUsed !== b.sheetsUsed) return a.sheetsUsed - b.sheetsUsed;
+        return b.utilization - a.utilization;
+      })[0];
+
+      if (best) {
+        const updatedSettings = { ...settings, algorithm: best.algoKey };
+        setSettings(updatedSettings);
+        await calculateResult(updatedSettings);
+        
+        addToast(
+          isHindi 
+            ? `अनुकूलन पूरा हुआ! सर्वोत्तम परिणाम: ${best.algoName.split('(')[0]}`
+            : `Optimization complete! Best algorithm applied: ${best.algoName.split('(')[0]}`,
+          "success"
+        );
+      } else {
+        await calculateResult(settings);
+      }
+    } catch (err) {
+      console.error("[App] Heuristics compare error:", err);
+    } finally {
       setIsComparing(false);
-    }, 400); // short delay to show loading state
+    }
   };
 
   // Internal save and reset (Feature 4 & 3)
@@ -1046,7 +1116,7 @@ export default function App() {
           </div>
           
           <button
-            onClick={calculateResult}
+            onClick={() => calculateResult()}
             disabled={isCalculating}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-xl text-sm font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
@@ -1195,8 +1265,12 @@ export default function App() {
                     : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100/80 border-indigo-200 dark:bg-indigo-950/45 dark:text-indigo-300 dark:border-indigo-900/50 dark:hover:bg-indigo-950/70 active:scale-95'
                 }`}
               >
-                <RefreshCw size={14} className={isComparing ? 'animate-spin' : ''} />
-                {isComparing ? (isHindi ? 'गणना हो रही है...' : 'Solving...') : t.compare_algos}
+                {isComparing ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Play size={14} className="fill-indigo-700/80 text-indigo-700 dark:fill-indigo-300/80 dark:text-indigo-300" />
+                )}
+                {isComparing ? (isHindi ? 'गणना हो रही है...' : 'Solving...') : (isHindi ? 'तुलना करें और चलाएं (Play)' : 'Compare & Play')}
               </button>
             </div>
 
@@ -1224,7 +1298,11 @@ export default function App() {
                     return (
                       <div
                         key={c.algoKey}
-                        onClick={() => setSettings({ ...settings, algorithm: c.algoKey })}
+                        onClick={() => {
+                          const updated = { ...settings, algorithm: c.algoKey };
+                          setSettings(updated);
+                          calculateResult(updated);
+                        }}
                         className={`relative rounded-2xl border p-4 transition-all cursor-pointer flex flex-col gap-2 ${
                           isCurrent
                             ? 'border-indigo-600 bg-indigo-50/20 ring-2 ring-indigo-500/10'

@@ -237,7 +237,8 @@ export function runPackingSingleMaterial(
   materialNameOverride?: string,
   stockQtyOverride?: number
 ): PackingResult {
-  if (settings.algorithm === 'AutoBest') {
+  const currentAlgorithm = settings?.algorithm || 'AutoBest';
+  if (currentAlgorithm === 'AutoBest') {
     // Rule 2: Multi-pass Dictionary Ka Intejaam (Core Logic)
     const nesting_iteration_pool: Record<string, PackingResult> = {};
     const heuristics = [
@@ -395,7 +396,7 @@ export function runPackingSingleMaterial(
 
     const stillToPack: PartToPack[] = [];
 
-    if (settings.algorithm === 'StripCutRowFirst') {
+    if (currentAlgorithm === 'StripCutRowFirst') {
       // --- STRIP-CUT ROW-FIRST (CONTINUOUS HORIZONTAL RIP) ---
       const sheetParts = [...remainingParts];
       // Sort primarily by height (cutW) descending to group similar heights and minimize vertical waste
@@ -583,7 +584,7 @@ export function runPackingSingleMaterial(
       continue;
     }
 
-    if (settings.algorithm === 'StripCutColFirst') {
+    if (currentAlgorithm === 'StripCutColFirst') {
       // --- STRIP-CUT COLUMN-FIRST (CONTINUOUS VERTICAL RIP) ---
       const sheetParts = [...remainingParts];
       // Sort primarily by length (cutL) descending to group similar lengths and define column widths
@@ -802,7 +803,7 @@ export function runPackingSingleMaterial(
       }
 
       // Check all orientations and free rects to find best fit
-      if (settings.algorithm.startsWith('Guillotine')) {
+      if (currentAlgorithm.startsWith('Guillotine')) {
         // --- GUILLOTINE PACKING (BSSF Heuristic) ---
         let bestScore = Infinity; // We want to minimize the score (shortSideFit - bonuses)
         const qtyLeft = unplacedPartsMap.get(part.name)?.qty || 1;
@@ -870,7 +871,7 @@ export function runPackingSingleMaterial(
           // Remove the placed free rect
           freeRects.splice(bestRectIndex, 1);
 
-          const isBssfSas = settings.algorithm === 'GuillotineBssfSas';
+          const isBssfSas = currentAlgorithm === 'GuillotineBssfSas';
 
           // Split heuristic:
           // BssfSas splits along the shorter side of the placed part.

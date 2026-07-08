@@ -1168,7 +1168,7 @@ export default function AttendanceModal({
   // Individual Worker Calculations
   const calculateWorkerMonthStats = (worker: Worker) => {
     const workerRecords = (attendanceData.records || []).filter(
-      (r) => r.workerId === worker.id && r.date.startsWith(selectedMonth)
+      (r) => r.workerId === worker.id && r.date && r.date.startsWith(selectedMonth)
     );
 
     let totalEarned = 0;
@@ -1860,7 +1860,7 @@ export default function AttendanceModal({
               {(() => {
                 const siteSummary: { [site: string]: { totalDays: number; workers: Set<string>; coordinates?: { lat: number; lng: number } } } = {};
                 (attendanceData.records || []).forEach(r => {
-                  if (r.date.startsWith(selectedMonth) && (r.status === 'P' || r.status === 'H')) {
+                  if (r.date && r.date.startsWith(selectedMonth) && (r.status === 'P' || r.status === 'H')) {
                     const site = r.location?.trim() || (isHindi ? "अनिर्धारित साइट" : "Unspecified Site");
                     if (!siteSummary[site]) {
                       siteSummary[site] = { totalDays: 0, workers: new Set(), coordinates: r.coordinates };

@@ -21,6 +21,7 @@ interface CompartmentNode {
   isDrawer?: boolean;
   drawerFasciaW?: number;
   drawerFasciaH?: number;
+  drawerOffsetY?: number;
   drawerSideL?: number;
   drawerSideH?: number;
   drawerInnerFrontH?: number;
@@ -262,6 +263,8 @@ export default function CabinetDesignerModal({
           const boxW = Math.max(effCw - clearance - (2 * p), 0);
           const innerFrontH = node.drawerInnerFrontH || (unit === 'Inch' ? 3 : unit === 'CM' ? 7 : 70);
 
+          const fy = node.drawerOffsetY !== undefined ? ry + node.drawerOffsetY : ry + (ch - fasciaH) / 2;
+
           // Front
           addPart({
             id: `cab-draw-front-${node.id}`,
@@ -272,7 +275,7 @@ export default function CabinetDesignerModal({
             allowRot: false,
             quantity: 1,
             edges: { T: true, B: true, L: true, R: true }
-          }, rx + cw/2, ry + ch/2, 'drawer_front', node.id);
+          }, rx + cw/2, fy + fasciaH/2, 'drawer_front', node.id);
 
           // Sides
           addPart({
@@ -284,7 +287,7 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 2,
             edges: { T: true, B: false, L: false, R: false }
-          }, rx + cw/2, ry + ch/2, 'drawer_side', node.id);
+          }, rx + cw/2, fy + fasciaH/2, 'drawer_side', node.id);
 
           // Back
           addPart({
@@ -296,7 +299,7 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: true, B: false, L: false, R: false }
-          }, rx + cw/2, ry + ch/2, 'drawer_back', node.id);
+          }, rx + cw/2, fy + fasciaH/2, 'drawer_back', node.id);
 
           // Inner Front
           addPart({
@@ -308,7 +311,7 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: true, B: false, L: false, R: false }
-          }, rx + cw/2, ry + ch/2, 'drawer_inner_front', node.id);
+          }, rx + cw/2, fy + fasciaH/2, 'drawer_inner_front', node.id);
 
           // Bottom
           addPart({
@@ -320,7 +323,7 @@ export default function CabinetDesignerModal({
             allowRot: true,
             quantity: 1,
             edges: { T: false, B: false, L: false, R: false }
-          }, rx + cw/2, ry + ch/2, 'drawer_bottom', node.id);
+          }, rx + cw/2, fy + fasciaH/2, 'drawer_bottom', node.id);
         }
         return;
       }
@@ -496,11 +499,11 @@ export default function CabinetDesignerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl flex flex-col max-h-[95vh] animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-50">
+      <div className="bg-white w-full h-full flex flex-col animate-in fade-in duration-200">
         
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl">
+        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
               <Hammer size={20} />
@@ -787,10 +790,10 @@ export default function CabinetDesignerModal({
 
           {/* STEP 3: ROUGH SKETCH CANVAS & AI ANALYSIS */}
           {step === 3 && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-[500px]">
               
               {/* Left Column (5/12): Add Elements & Sliders */}
-              <div className="lg:col-span-5 flex flex-col space-y-4">
+              <div className="lg:col-span-4 flex flex-col space-y-4">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Layers size={14} className="text-indigo-600" />
@@ -818,6 +821,24 @@ export default function CabinetDesignerModal({
                       
                       const selectedNode = findNode(rootNode, selectedElementId);
                       if (!selectedNode) return null;
+
+                      // Moved bounds calculation up
+                      const boundsMap: Record<string, { w: number, h: number }> = {};
+                      const calcBounds = (n: CompartmentNode, cw: number, ch: number) => {
+                        boundsMap[n.id] = { w: cw, h: ch };
+                        if (n.splitType === 'h' && n.child1 && n.child2) {
+                          const val = n.splitValue || (ch - plyThickness) / 2;
+                          calcBounds(n.child1, cw, val);
+                          calcBounds(n.child2, cw, ch - val - plyThickness);
+                        } else if (n.splitType === 'v' && n.child1 && n.child2) {
+                          const val = n.splitValue || (cw - plyThickness) / 2;
+                          calcBounds(n.child1, val, ch);
+                          calcBounds(n.child2, cw - val - plyThickness, ch);
+                        }
+                      };
+                      calcBounds(rootNode, width - 2 * plyThickness, height - 2 * plyThickness);
+                      const b = boundsMap[selectedNode.id];
+
 
                       if (selectedNode.splitType === 'none') {
                         return (
@@ -926,6 +947,38 @@ export default function CabinetDesignerModal({
                                         <span className="text-[10px] text-slate-400 font-bold">{unit}</span>
                                       </div>
                                     </label>
+                                    <div>
+                                      <div className="flex justify-between items-center text-xs font-bold text-slate-900 mb-2">
+                                        <span>{isHindi ? 'टॉप से दूरी (Position Y)' : 'Offset from Top (Y)'}</span>
+                                        <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-1 py-1">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="0.1"
+                                            value={selectedNode.drawerOffsetY ?? ''}
+                                            placeholder="Auto"
+                                            onChange={(e) => {
+                                              let v = parseFloat(e.target.value);
+                                              setRootNode(prev => updateNode(prev, selectedNode.id, n => ({ ...n, drawerOffsetY: isNaN(v) ? undefined : v })));
+                                            }}
+                                            className="w-12 bg-transparent border-0 p-0 text-right text-xs font-bold text-slate-900 focus:ring-0 placeholder:text-slate-300"
+                                          />
+                                          <span className="text-[10px] text-slate-400 font-bold">{unit}</span>
+                                        </div>
+                                      </div>
+                                      <input 
+                                        type="range" 
+                                        min="0" 
+                                        max={b ? Math.max(b.h - (selectedNode.drawerFasciaH || 0), 0) : 100} 
+                                        step="0.1"
+                                        value={selectedNode.drawerOffsetY ?? (b ? (b.h - (selectedNode.drawerFasciaH || b.h)) / 2 : 0)} 
+                                        onChange={(e) => {
+                                          const v = parseFloat(e.target.value);
+                                          setRootNode(prev => updateNode(prev, selectedNode.id, n => ({ ...n, drawerOffsetY: v })));
+                                        }}
+                                        className="w-full accent-amber-600"
+                                      />
+                                    </div>
                                   </div>
                                   
                                   {/* Drawer Box Sides */}
@@ -1022,22 +1075,8 @@ export default function CabinetDesignerModal({
                           </div>
                         );
                       } else {
-                        const boundsMap: Record<string, { w: number, h: number }> = {};
-                        const calcBounds = (n: CompartmentNode, cw: number, ch: number) => {
-                          boundsMap[n.id] = { w: cw, h: ch };
-                          if (n.splitType === 'h' && n.child1 && n.child2) {
-                            const val = n.splitValue || (ch - plyThickness) / 2;
-                            calcBounds(n.child1, cw, val);
-                            calcBounds(n.child2, cw, ch - val - plyThickness);
-                          } else if (n.splitType === 'v' && n.child1 && n.child2) {
-                            const val = n.splitValue || (cw - plyThickness) / 2;
-                            calcBounds(n.child1, val, ch);
-                            calcBounds(n.child2, cw - val - plyThickness, ch);
-                          }
-                        };
-                        calcBounds(rootNode, width - 2 * plyThickness, height - 2 * plyThickness);
-                        
-                        const b = boundsMap[selectedNode.id];
+                        // boundsMap already calculated above
+
                         const maxVal = selectedNode.splitType === 'h' ? (b.h - plyThickness) : (b.w - plyThickness);
                         const currentVal = selectedNode.splitValue || (maxVal / 2);
                         
@@ -1121,11 +1160,11 @@ export default function CabinetDesignerModal({
               </div>
 
               {/* Right Column (7/12): 2D Blueprint preview */}
-              <div className="lg:col-span-7 flex flex-col md:flex-row gap-4 items-center justify-center">
+              <div className="lg:col-span-8 flex flex-col gap-4 items-center justify-center h-full">
                 
                 {/* Auto Generated Pristine 2D CAD Blueprint Layout */}
                 <div className="flex flex-col items-center w-full">
-                  <div className="flex justify-between items-center w-full max-w-[220px] mb-1.5">
+                  <div className="flex justify-between items-center w-full mb-1.5 px-4">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 text-emerald-600">
                       <Layers size={11} />
                       {isHindi ? '2D डायग्राम' : '2D Diagram'}
@@ -1139,8 +1178,8 @@ export default function CabinetDesignerModal({
                     </button>
                   </div>
                   
-                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-xl flex items-center justify-center w-[220px] h-[304px]">
-                    <svg width={180} height={260} className="text-white">
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-xl flex items-center justify-center w-full h-full min-h-[500px] max-h-[80vh]">
+                    <svg viewBox="0 0 180 260" className="text-white w-full h-full">
                       {/* Grid background for CAD feel */}
                       <defs>
                         <pattern id="cad-grid" width="8" height="8" patternUnits="userSpaceOnUse">
@@ -1205,7 +1244,7 @@ export default function CabinetDesignerModal({
                                         const fW = node.drawerFasciaW || Math.max(rw - (unit === 'Inch' ? 0.25 : 6), 0);
                                         const fH = node.drawerFasciaH || Math.max(rh - (unit === 'Inch' ? 0.125 : 3), 0);
                                         const fx = rx + (rw - fW) / 2;
-                                        const fy = ry + (rh - fH) / 2;
+                                        const fy = node.drawerOffsetY !== undefined ? ry + node.drawerOffsetY : ry + (rh - fH) / 2;
                                         return (
                                           <g>
                                             <rect 
@@ -1258,8 +1297,17 @@ export default function CabinetDesignerModal({
                                               <rect x={19 + (rx + rw - dumR) * scaleX} y={19 + ry * scaleY} width={Math.max(dumR * scaleX, 0)} height={Math.max(rh * scaleY, 0)} fill="#475569" stroke="#334155" strokeWidth="0.5" />
                                             )}
                                             {/* Drawer Inner Box */}
-                                            <rect x={19 + bx * scaleX} y={19 + (ry + (rh - innerFrontH) / 2) * scaleY} width={Math.max(boxOuterW * scaleX, 0)} height={Math.max(innerFrontH * scaleY, 0)} fill="none" stroke="#38bdf8" strokeWidth="1" strokeDasharray="2,2" />
-                                            <text x={19 + bx * scaleX + Math.max(boxOuterW * scaleX, 0)/2} y={19 + (ry + (rh - innerFrontH) / 2) * scaleY + Math.max(innerFrontH * scaleY, 0)/2 + 2} fontSize="5" fill="#38bdf8" textAnchor="middle">BOX</text>
+                                            {(() => {
+                                              const fH = node.drawerFasciaH || Math.max(rh - (unit === 'Inch' ? 0.125 : 3), 0);
+                                              const fy = node.drawerOffsetY !== undefined ? ry + node.drawerOffsetY : ry + (rh - fH) / 2;
+                                              const innerFy = fy + (fH - innerFrontH) / 2;
+                                              return (
+                                                <>
+                                                  <rect x={19 + bx * scaleX} y={19 + innerFy * scaleY} width={Math.max(boxOuterW * scaleX, 0)} height={Math.max(innerFrontH * scaleY, 0)} fill="none" stroke="#38bdf8" strokeWidth="1" strokeDasharray="2,2" />
+                                                  <text x={19 + bx * scaleX + Math.max(boxOuterW * scaleX, 0)/2} y={19 + innerFy * scaleY + Math.max(innerFrontH * scaleY, 0)/2 + 2} fontSize="5" fill="#38bdf8" textAnchor="middle">BOX</text>
+                                                </>
+                                              );
+                                            })()}
                                           </g>
                                         );
                                       })()

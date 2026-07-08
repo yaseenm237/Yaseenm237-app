@@ -15,11 +15,12 @@ export default defineConfig(() => {
     build: {
       target: 'esnext',
       sourcemap: false,
-      minify: false,
+      minify: 'esbuild',
       reportCompressedSize: false,
       chunkSizeWarningLimit: 2000,
       rollupOptions: {
         maxParallelFileOps: 2,
+        cache: false,
       },
     },
     server: {
