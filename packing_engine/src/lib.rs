@@ -7,6 +7,16 @@ pub struct Stock {
     pub width: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum Grain {
+    #[serde(rename = "L")]
+    Vertical,   // लंबाई (Length) के साथ
+    #[serde(rename = "W")]
+    Horizontal, // चौड़ाई (Width) के साथ
+    #[serde(rename = "N")]
+    Any,        // कोई पाबंदी नहीं (Rotation allowed)
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Part {
     pub id: String,
@@ -14,12 +24,18 @@ pub struct Part {
     pub length: f64,
     pub width: f64,
     pub quantity: u32,
+    #[serde(default)]
+    pub grain: Option<Grain>,
+    #[serde(rename = "allowRot", default)]
+    pub allow_rot: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
     pub kerf: f64,
     pub algo: String,
+    #[serde(rename = "respectGrain", default)]
+    pub respect_grain: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -104,6 +120,8 @@ pub fn run_optimizer(val: JsValue) -> JsValue {
                 length: p.length,
                 width: p.width,
                 quantity: 1,
+                grain: p.grain.clone(),
+                allow_rot: p.allow_rot,
             });
         }
     }
@@ -130,7 +148,33 @@ pub fn run_optimizer(val: JsValue) -> JsValue {
 
             let rect_w = part.length + input.settings.kerf;
             let rect_h = part.width + input.settings.kerf;
-            let orientations = vec![(rect_w, rect_h, false), (rect_h, rect_w, true)];
+            let mut orientations = Vec::new();
+            
+            let strictly_respect = input.settings.respect_grain.unwrap_or(true);
+            let grain = part.grain.clone().unwrap_or(Grain::Any);
+            let allow_rot = part.allow_rot.unwrap_or(true);
+
+            if strictly_respect {
+                match grain {
+                    Grain::Vertical => {
+                        orientations.push((rect_w, rect_h, false));
+                    }
+                    Grain::Horizontal => {
+                        orientations.push((rect_h, rect_w, true));
+                    }
+                    Grain::Any => {
+                        orientations.push((rect_w, rect_h, false));
+                        if allow_rot {
+                            orientations.push((rect_h, rect_w, true));
+                        }
+                    }
+                }
+            } else {
+                orientations.push((rect_w, rect_h, false));
+                if allow_rot {
+                    orientations.push((rect_h, rect_w, true));
+                }
+            }
 
             for (r_idx, f) in free_rects.iter().enumerate() {
                 for (pw, ph, rot) in &orientations {

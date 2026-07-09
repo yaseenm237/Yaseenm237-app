@@ -79,9 +79,24 @@ export default function CuttingListPanel({
   const [pasteText, setPasteText] = useState<string>('');
   const [pasteError, setPasteError] = useState<string>('');
   const [pasteMode, setPasteMode] = useState<'append' | 'replace'>('append');
-  const hasMultiMaterials = (settings.stockItems?.length || 0) > 1;
+  const hasMultiMaterials = (settings.stockItems?.length || 0) > 1 || (settings.recipes?.length || 0) > 0;
   const hasEdgeMaterials = (settings.edgeBandItems?.length || 0) > 0;
   const [editingHolesFor, setEditingHolesFor] = useState<string | null>(null);
+
+  const getPartThickness = (part: any) => {
+    const recipe = settings.recipes?.find(r => r.id === part.materialId);
+    if (recipe) {
+      return recipe.calculatedThickness;
+    }
+    const baseMat = settings.stockItems?.find(s => s.id === part.materialId) || settings.stockItems?.[0];
+    const micaA = settings.sunmicaItems?.find(s => s.id === part.frontLaminateId);
+    const micaB = settings.sunmicaItems?.find(s => s.id === part.backLaminateId);
+    
+    const baseTh = baseMat?.thickness || 18.0;
+    const micaATh = micaA?.thickness || 0.0;
+    const micaBTh = micaB?.thickness || 0.0;
+    return Number((baseTh + micaATh + micaBTh).toFixed(2));
+  };
 
   // Lock body scroll when paste modal is open
   useEffect(() => {
@@ -427,6 +442,17 @@ export default function CuttingListPanel({
                           {part.partNumber}
                         </span>
                       )}
+                      {(() => {
+                        const thick = getPartThickness(part);
+                        return (
+                          <span 
+                            className="px-1.5 py-0.5 text-[9px] font-black bg-emerald-50 border border-emerald-200 text-emerald-700 rounded select-none shrink-0"
+                            title={isHindi ? `कुल दबाया हुआ पैनल मोटाई` : `Total pressed panel thickness`}
+                          >
+                            {thick}mm
+                          </span>
+                        );
+                      })()}
                       <div className="relative inline-grid w-full">
                         <span className="invisible col-start-1 row-start-1 px-2.5 py-1.5 text-sm whitespace-pre min-w-[140px] w-full">
                           {part.name || (isHindi ? 'पुर्जा' : 'e.g., Side Panel')}
@@ -447,15 +473,34 @@ export default function CuttingListPanel({
                     <div className="py-2.5 pr-2">
                       <select
                         value={part.materialId || ''}
-                        onChange={(e) => handleRowChange(part.id, 'materialId', e.target.value || undefined)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleRowChange(part.id, 'materialId', val || undefined);
+                          const recipe = settings.recipes?.find(r => r.id === val);
+                          if (recipe) {
+                            handleRowChange(part.id, 'frontLaminateId', recipe.sideAMicaId || undefined);
+                            handleRowChange(part.id, 'backLaminateId', recipe.sideBMicaId || undefined);
+                          }
+                        }}
                         className="w-full text-xs border border-slate-200 rounded-lg px-2 py-2 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none font-medium text-slate-700"
                       >
-                        <option value="">{isHindi ? 'डिफ़ॉल्ट' : 'Default'}</option>
-                        {settings.stockItems?.map(item => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
+                        <option value="">{isHindi ? 'चुनें...' : 'Choose Board / Recipe...'}</option>
+                        {settings.recipes && settings.recipes.length > 0 && (
+                          <optgroup label={isHindi ? "प्रेसिंग रेसिपी (Pressed Panels)" : "Pressed Recipes (SKUs)"}>
+                            {settings.recipes.map(recipe => (
+                              <option key={recipe.id} value={recipe.id}>
+                                {recipe.name} ({recipe.calculatedThickness}mm)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label={isHindi ? "कच्चा बोर्ड (Raw Boards)" : "Raw Stock Boards"}>
+                          {settings.stockItems?.map(item => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} ({item.thickness || 18}mm)
+                            </option>
+                          ))}
+                        </optgroup>
                       </select>
                     </div>
                   )}
@@ -593,7 +638,7 @@ export default function CuttingListPanel({
                       <option value="">{isHindi ? 'कोई नहीं' : 'None'}</option>
                       {settings.sunmicaItems?.map(item => (
                         <option key={item.id} value={item.id}>
-                          {item.name}
+                          {item.name} {item.code ? `[${item.code}]` : ''}
                         </option>
                       ))}
                     </select>
@@ -609,7 +654,7 @@ export default function CuttingListPanel({
                       <option value="">{isHindi ? 'कोई नहीं' : 'None'}</option>
                       {settings.sunmicaItems?.map(item => (
                         <option key={item.id} value={item.id}>
-                          {item.name}
+                          {item.name} {item.code ? `[${item.code}]` : ''}
                         </option>
                       ))}
                     </select>

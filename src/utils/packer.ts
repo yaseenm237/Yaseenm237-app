@@ -148,10 +148,14 @@ export function runPacking(
     return runPackingSingleMaterial(partsInput, settings);
   }
 
-  // Otherwise, group parts by material
+  // Otherwise, group parts by material (resolving recipe to base board material ID)
   const materialGroups = new Map<string | undefined, PartInput[]>();
   for (const part of partsInput) {
-    const matId = part.materialId;
+    let matId = part.materialId;
+    const recipe = settings.recipes?.find(r => r.id === matId);
+    if (recipe) {
+      matId = recipe.baseMaterialId;
+    }
     if (!materialGroups.has(matId)) {
       materialGroups.set(matId, []);
     }
@@ -418,14 +422,15 @@ export function runPackingSingleMaterial(
         const rectW = part.cutL + K;
         const rectH = part.cutW + K;
         const orientations: { w: number; h: number; rot: boolean }[] = [];
+        const strictlyRespect = settings.respectGrain !== false;
 
-        if (part.grain === 'L') {
+        if (strictlyRespect && part.grain === 'L') {
           orientations.push({ w: rectW, h: rectH, rot: false });
-        } else if (part.grain === 'W') {
+        } else if (strictlyRespect && part.grain === 'W') {
           orientations.push({ w: rectH, h: rectW, rot: true });
         } else {
           orientations.push({ w: rectW, h: rectH, rot: false });
-          if (part.allowRot) {
+          if (!strictlyRespect || part.allowRot) {
             orientations.push({ w: rectH, h: rectW, rot: true });
           }
         }
@@ -605,14 +610,15 @@ export function runPackingSingleMaterial(
         const rectW = part.cutL + K;
         const rectH = part.cutW + K;
         const orientations: { w: number; h: number; rot: boolean }[] = [];
+        const strictlyRespect = settings.respectGrain !== false;
 
-        if (part.grain === 'L') {
+        if (strictlyRespect && part.grain === 'L') {
           orientations.push({ w: rectW, h: rectH, rot: false });
-        } else if (part.grain === 'W') {
+        } else if (strictlyRespect && part.grain === 'W') {
           orientations.push({ w: rectH, h: rectW, rot: true });
         } else {
           orientations.push({ w: rectW, h: rectH, rot: false });
-          if (part.allowRot) {
+          if (!strictlyRespect || part.allowRot) {
             orientations.push({ w: rectH, h: rectW, rot: true });
           }
         }
@@ -783,21 +789,17 @@ export function runPackingSingleMaterial(
       const rectH = part.cutW + K;
 
       // Orientation constraints:
-      // Grain 'L': must pack as Length along sheet X-axis. Rotation is false.
-      // Grain 'W': must pack as Width along sheet X-axis (rotated initially). Rotation is false.
-      // Grain 'N':
-      //   - if allowRot: can try both (rectW x rectH) and (rectH x rectW)
-      //   - else: can only try (rectW x rectH)
       const orientations: { w: number; h: number; rot: boolean }[] = [];
+      const strictlyRespect = settings.respectGrain !== false;
 
-      if (part.grain === 'L') {
+      if (strictlyRespect && part.grain === 'L') {
         orientations.push({ w: rectW, h: rectH, rot: false });
-      } else if (part.grain === 'W') {
+      } else if (strictlyRespect && part.grain === 'W') {
         orientations.push({ w: rectH, h: rectW, rot: true }); // rotate 90 degrees to align grain widthwise
       } else {
-        // No grain
+        // No grain or not strictly respecting grain
         orientations.push({ w: rectW, h: rectH, rot: false });
-        if (part.allowRot) {
+        if (!strictlyRespect || part.allowRot) {
           orientations.push({ w: rectH, h: rectW, rot: true });
         }
       }

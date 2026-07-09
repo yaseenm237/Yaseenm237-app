@@ -308,17 +308,29 @@ export function generatePdfReport(
   doc.setTextColor(71, 85, 105);
 
   // Group parts by identical properties
-  const groupedGlobalParts = new Map<string, typeof parts[0] & { totalQty: number, displayNames: Set<string> }>();
+  const groupedGlobalParts = new Map<string, typeof parts[0] & { totalQty: number, displayNames: Set<string>, resolvedMaterialName: string }>();
   parts.forEach(p => {
     if (p.quantity <= 0) return;
-    const matName = p.materialId ? (settings.stockItems?.find(s => s.id === p.materialId)?.name || 'Default') : 'Default';
+    
+    let matName = "Default";
+    if (p.materialId) {
+      const recipe = settings.recipes?.find(r => r.id === p.materialId);
+      if (recipe) {
+        const baseMat = settings.stockItems?.find(s => s.id === recipe.baseMaterialId);
+        const baseName = baseMat ? baseMat.name : "Raw Stock";
+        const pressedTh = recipe.calculatedThickness;
+        matName = `${recipe.name} (${pressedTh.toFixed(1)}mm)`;
+      } else {
+        matName = settings.stockItems?.find(s => s.id === p.materialId)?.name || 'Default';
+      }
+    }
     
     // Create a key based on identical properties, ignoring names for grouping if everything else is identical
     const edgesKey = [p.edges.T, p.edges.B, p.edges.L, p.edges.R].join('-');
     const key = `${p.length}x${p.width}_${p.grain}_${matName}_${edgesKey}_${p.edgeMaterialId || ''}`;
     
     if (!groupedGlobalParts.has(key)) {
-      groupedGlobalParts.set(key, { ...p, totalQty: 0, displayNames: new Set() });
+      groupedGlobalParts.set(key, { ...p, totalQty: 0, displayNames: new Set(), resolvedMaterialName: matName });
     }
     const group = groupedGlobalParts.get(key)!;
     group.totalQty += p.quantity;
@@ -367,12 +379,7 @@ export function generatePdfReport(
     doc.setTextColor(71, 85, 105);
     
     if (hasMultiple) {
-      let matName = "Default";
-      if (part.materialId) {
-        const stockItem = settings.stockItems?.find(s => s.id === part.materialId);
-        if (stockItem) matName = stockItem.name;
-      }
-      doc.text(sanitizeText(matName), margin + 45, y + 4.5);
+      doc.text(sanitizeText(part.resolvedMaterialName), margin + 45, y + 4.5);
     }
 
     doc.text(`${part.totalQty}`, margin + 70, y + 4.5);

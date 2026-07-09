@@ -170,19 +170,25 @@ const DEFAULT_SETTINGS: SheetSettings = {
   algorithm: 'AutoBest',
   sheetCost: 45.0,
   stockItems: [
-    { id: 'mat-plywood', name: '18mm Plywood (प्लाईवुड)', length: 96.0, width: 48.0, cost: 45.0 },
-    { id: 'mat-mdf', name: '18mm MDF (एमडीएफ)', length: 96.0, width: 48.0, cost: 35.0 },
-    { id: 'mat-melamine', name: '18mm Melamine (मेलामाइन्)', length: 96.0, width: 48.0, cost: 40.0 }
+    { id: 'mat-plywood', name: 'Plywood (प्लाईवुड)', length: 96.0, width: 48.0, cost: 45.0, thickness: 18.0 },
+    { id: 'mat-plywood-16', name: 'Commercial Block Board (कमर्शियल बोर्ड)', length: 96.0, width: 48.0, cost: 40.0, thickness: 16.0 },
+    { id: 'mat-mdf', name: 'MDF (एमडीएफ)', length: 96.0, width: 48.0, cost: 35.0, thickness: 18.0 },
+    { id: 'mat-melamine', name: 'Melamine (मेलामाइन्)', length: 96.0, width: 48.0, cost: 40.0, thickness: 18.0 }
   ],
   edgeBandItems: [
     { id: 'edge-white', name: 'White 0.8mm Edge Band', thickness: 0.8 },
     { id: 'edge-wood', name: 'Woodgrain 2mm Edge Band', thickness: 2.0 }
   ],
   sunmicaItems: [
-    { id: 'mica-white-gloss', name: '0.8mm Glossy White (सफ़ेद चमकदार)', thickness: 0.8, cost: 12.0 },
-    { id: 'mica-wooden-texture', name: '1.0mm Woodgrain Texture (लकड़ी का टेक्सचर)', thickness: 1.0, cost: 18.0 },
-    { id: 'mica-liner-offwhite', name: '0.6mm Off-White Liner (लाइनर माइका)', thickness: 0.6, cost: 8.0 }
-  ]
+    { id: 'mica-white-gloss', name: '0.8mm Glossy White (सफ़ेद चमकदार)', thickness: 0.8, code: 'W-Gloss-101' },
+    { id: 'mica-wooden-texture', name: '1.0mm Woodgrain Texture (लकड़ी का टेक्सचर)', thickness: 1.0, code: 'Teak-W-204' },
+    { id: 'mica-liner-offwhite', name: '0.6mm Off-White Liner (लाइनर माइका)', thickness: 0.6, code: 'OW-Liner-06' }
+  ],
+  recipes: [
+    { id: 'rec-kitchen-01', name: 'MOD_KITCHEN_01', baseMaterialId: 'mat-plywood-16', sideAMicaId: 'mica-white-gloss', sideBMicaId: 'mica-liner-offwhite', calculatedThickness: 17.4 },
+    { id: 'rec-wardrobe-02', name: 'MOD_WARD_02', baseMaterialId: 'mat-plywood', sideAMicaId: 'mica-wooden-texture', sideBMicaId: 'mica-wooden-texture', calculatedThickness: 20.0 }
+  ],
+  respectGrain: true
 };
 
 const INITIAL_PARTS: PartInput[] = [
@@ -615,10 +621,16 @@ export default function App() {
                name: p.name || 'Unnamed',
                length: Math.max(1.0, lMm - dL),
                width: Math.max(1.0, wMm - dW),
-               quantity: p.quantity
+               quantity: p.quantity,
+               grain: p.grain,
+               allowRot: p.allowRot
              };
           }),
-          settings: { kerf: activeSettings.bladeTh, algo: activeSettings.algorithm }
+          settings: { 
+            kerf: activeSettings.bladeTh, 
+            algo: activeSettings.algorithm,
+            respectGrain: activeSettings.respectGrain !== false
+          }
         };
 
         console.log("[App] Preparing and sending input to WASM Worker:", JSON.stringify(input, null, 2));
@@ -814,10 +826,11 @@ export default function App() {
 
   // CSV Export trigger
   const handleExportCsv = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)\n";
+    let csvContent = "data:text/csv;charset=utf-8,\ufeff"; // Add BOM for Excel UTF-8 support
+    const headers = "Part Name,Length,Width,Pressed Thickness (mm),Material Recipe,Full Material Detail,Base Plywood,Front Mica,Back Mica,Grain,Rotation,Quantity,Edges(TBLR)";
+    csvContent += headers + "\n";
 
-    const lines: string[] = ["Part Name,Length,Width,Grain,Rotation,Quantity,Edges(TBLR)"];
+    const lines: string[] = [headers];
 
     parts.forEach(p => {
       if (p.quantity <= 0) return;
@@ -826,7 +839,57 @@ export default function App() {
         .map(([name, _]) => name)
         .join('');
       
-      const line = `"${p.name || 'Unnamed'}",${p.length},${p.width},${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"`;
+      // Calculate pressed thickness details
+      let baseTh = 16.0;
+      let frontMicaTh = 0.0;
+      let backMicaTh = 0.0;
+      let baseName = "Raw Stock";
+      let recipeName = "N/A";
+      let frontMicaName = "None";
+      let backMicaName = "None";
+
+      const recipe = settings.recipes?.find(r => r.id === p.materialId);
+      if (recipe) {
+        recipeName = recipe.name;
+        const baseMat = settings.stockItems?.find(s => s.id === recipe.baseMaterialId);
+        if (baseMat) {
+          baseTh = baseMat.thickness ?? 16.0;
+          baseName = baseMat.name;
+        }
+        const sideAMica = settings.sunmicaItems?.find(s => s.id === recipe.sideAMicaId);
+        if (sideAMica) {
+          frontMicaName = sideAMica.code ? `${sideAMica.name} [${sideAMica.code}]` : sideAMica.name;
+          frontMicaTh = sideAMica.thickness ?? 0.0;
+        }
+        const sideBMica = settings.sunmicaItems?.find(s => s.id === recipe.sideBMicaId);
+        if (sideBMica) {
+          backMicaName = sideBMica.code ? `${sideBMica.name} [${sideBMica.code}]` : sideBMica.name;
+          backMicaTh = sideBMica.thickness ?? 0.0;
+        }
+      } else {
+        const baseMat = settings.stockItems?.find(s => s.id === p.materialId);
+        if (baseMat) {
+          baseTh = baseMat.thickness ?? 16.0;
+          baseName = baseMat.name;
+        }
+        const sideAMica = settings.sunmicaItems?.find(s => s.id === p.frontLaminateId);
+        if (sideAMica) {
+          frontMicaName = sideAMica.code ? `${sideAMica.name} [${sideAMica.code}]` : sideAMica.name;
+          frontMicaTh = sideAMica.thickness ?? 0.0;
+        }
+        const sideBMica = settings.sunmicaItems?.find(s => s.id === p.backLaminateId);
+        if (sideBMica) {
+          backMicaName = sideBMica.code ? `${sideBMica.name} [${sideBMica.code}]` : sideBMica.name;
+          backMicaTh = sideBMica.thickness ?? 0.0;
+        }
+      }
+
+      const totalThickness = baseTh + frontMicaTh + backMicaTh;
+      const fullDetail = recipe
+        ? `${baseName} (${baseTh}mm) + ${frontMicaName} (${frontMicaTh}mm) + ${backMicaName} (${backMicaTh}mm)`
+        : `${baseName} (${baseTh}mm)`;
+
+      const line = `"${p.name || 'Unnamed'}",${p.length},${p.width},${totalThickness.toFixed(1)},"${recipeName}","${fullDetail}","${baseName}","${frontMicaName}","${backMicaName}",${p.grain},${p.allowRot ? 'Y' : 'N'},${p.quantity},"${edgesStr}"`;
       csvContent += line + "\n";
       lines.push(line);
     });
@@ -835,8 +898,8 @@ export default function App() {
       navigator.clipboard.writeText(lines.join("\n"));
       addToast(
         isHindi 
-          ? "सीएसवी डेटा आपके क्लिपबोर्ड पर कॉपी और डाउनलोड हो गया है!" 
-          : "CSV Data copied to clipboard & downloaded successfully!", 
+          ? "विस्तृत सीएसवी डेटा आपके क्लिपबोर्ड पर कॉपी और डाउनलोड हो गया है!" 
+          : "Detailed CSV Data copied to clipboard & downloaded successfully!", 
         "success"
       );
     } catch (e) {
@@ -846,7 +909,7 @@ export default function App() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `cutting_list_${settings.algorithm}.csv`);
+    link.setAttribute("download", `cutting_list_pressed_recipe_${settings.algorithm}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

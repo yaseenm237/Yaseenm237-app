@@ -46,6 +46,7 @@ export interface StockItem {
   width: number;
   cost: number;
   quantity?: number; // Quantity available in stock
+  thickness?: number; // Thickness of base board in mm (e.g. 16 or 18)
 }
 
 export interface Worker {
@@ -89,7 +90,17 @@ export interface SunmicaItem {
   id: string;
   name: string; // e.g. "Glossy White 1.0mm"
   thickness?: number; // Thickness in mm (e.g. 1.0, 0.8)
-  cost?: number; // Cost of laminate sheet
+  cost?: number; // Cost of laminate sheet (legacy)
+  code?: string; // Color name, color code, or barcode
+}
+
+export interface MaterialRecipe {
+  id: string;
+  name: string; // e.g. "MOD_KITCHEN_01"
+  baseMaterialId: string; // Links to StockItem id
+  sideAMicaId: string; // Links to SunmicaItem id or "" for None
+  sideBMicaId: string; // Links to SunmicaItem id or "" for None
+  calculatedThickness: number; // sum of plywood + laminates
 }
 
 export interface SheetSettings {
@@ -105,6 +116,8 @@ export interface SheetSettings {
   stockItems?: StockItem[]; // List of available sheet materials in stock
   edgeBandItems?: EdgeBandItem[]; // List of available edge banding materials
   sunmicaItems?: SunmicaItem[]; // List of available Sunmica (laminate) materials
+  recipes?: MaterialRecipe[]; // Custom Material Recipes (Pressed Panels)
+  respectGrain?: boolean; // Whether to strictly respect grain rules
 }
 
 export interface PackedPart {
