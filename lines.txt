@@ -1,0 +1,171 @@
+        totalPartsArea: 0,
+        totalBandingLength: 0,
+        unplacedParts: []
+      });
+      setCompareResults(null);
+    }
+  }, [parts]);
+
+  // Manual calculation of cutting list
+  const calculateResult = async (overrideSettings?: SheetSettings) => {
+    setIsCalculating(true);
+    let success = false;
+    const activeSettings = (overrideSettings && typeof overrideSettings === 'object' && 'unit' in overrideSettings) ? overrideSettings : settings;
+
+    // Use worker if ready
+    if (engineRef.current) {
+      try {
+        const S_L = convertToMm(activeSettings.sheetL, activeSettings.unit);
+        const S_W = convertToMm(activeSettings.sheetW, activeSettings.unit);
+        const binW = Math.max(1.0, S_L - 2 * activeSettings.trimMargin);
+        const binH = Math.max(1.0, S_W - 2 * activeSettings.trimMargin);
+
+        const input = {
+          stock: { length: binW, width: binH },
+          parts: parts.map(p => { 
+             const lMm = convertToMm(p.length, activeSettings.unit);
+             const wMm = convertToMm(p.width, activeSettings.unit);
+             let currentEdgeTh = activeSettings.edgeTh;
+             if (p.edgeMaterialId && activeSettings.edgeBandItems) {
+               const edgeBand = activeSettings.edgeBandItems.find(e => e.id === p.edgeMaterialId);
+               if (edgeBand && edgeBand.thickness !== undefined) {
+                 currentEdgeTh = edgeBand.thickness;
+               }
+             }
+             const dL = (Number(p.edges?.T || false) + Number(p.edges?.B || false)) * currentEdgeTh;
+             const dW = (Number(p.edges?.L || false) + Number(p.edges?.R || false)) * currentEdgeTh;
+             return {
+               id: p.id,
+               name: p.name || 'Unnamed',
+               length: Math.max(1.0, lMm - dL),
+               width: Math.max(1.0, wMm - dW),
+               quantity: p.quantity,
+               grain: p.grain,
+               allowRot: p.allowRot
+             };
+          }),
+          settings: { 
+            kerf: activeSettings.bladeTh, 
+            algo: activeSettings.algorithm,
+            respectGrain: activeSettings.respectGrain !== false
+          }
+        };
+
+        console.log("[App] Preparing and sending input to WASM Worker:", JSON.stringify(input, null, 2));
+        
+        // Call the Rust engine
+        const wasmRes = await engineRef.current.runPacking(input);
+        console.log("[App] Received result from WASM Worker:", JSON.stringify(wasmRes, null, 2));
+        
+        if (wasmRes && wasmRes.status === 'success') {
+          // Map Rust results to App's PackingResult type
+          const findOrigPart = (pId: string) => {
+            let found = parts.find(op => op.id === pId);
+            if (found) return found;
+            const lastUnderscoreIndex = pId.lastIndexOf('_');
+            if (lastUnderscoreIndex !== -1) {
+              const prefix = pId.substring(0, lastUnderscoreIndex);
+              found = parts.find(op => op.id === prefix);
+              if (found) return found;
+            }
+            const firstToken = pId.split('_')[0];
+            return parts.find(op => op.id === firstToken);
+          };
+          
+          let placedPartsArea = 0;
+          wasmRes.layouts.forEach((l: any) => {
+             l.parts.forEach((p: any) => {
+               const origPart = findOrigPart(p.id);
+               if (origPart) {
+                  const lMm = convertToMm(origPart.length, activeSettings.unit);
+                  const wMm = convertToMm(origPart.width, activeSettings.unit);
+                  placedPartsArea += (lMm * wMm);
+               }
+             });
+          });
+          
+          const totalStockArea = wasmRes.layouts.length * S_L * S_W;
+          const actualUtilization = totalStockArea > 0 ? (placedPartsArea / totalStockArea) * 100 : 0;
+          const actualWaste = 100 - actualUtilization;
+          
+          let totalPartsArea = 0;
+          input.parts.forEach(p => {
+            totalPartsArea += (p.length * p.width * p.quantity);
+          });
+          
+          const transformedResult: PackingResult = {
+            layouts: wasmRes.layouts.map((l: any) => ({
+              sheetIndex: l.sheet_index,
+              width: l.width,
+              height: l.height,
+              usedArea: l.used_area,
+              totalArea: l.total_area,
+              wastePercent: l.waste_percent,
+              wasteRects: l.waste_rects,
+              parts: l.parts.map((p: any) => {
+                const origPart = findOrigPart(p.id);
+                const lMm = origPart ? convertToMm(origPart.length, activeSettings.unit) : p.w;
+                const wMm = origPart ? convertToMm(origPart.width, activeSettings.unit) : p.h;
+                return {
+                  id: p.id,
+                  name: p.name,
+                  x: p.x,
+                  y: p.y,
+                  w: p.w,
+                  h: p.h,
+                  isRotated: p.is_rotated,
+                  origL: lMm,
+                  origW: wMm,
+                  cutL: p.is_rotated ? p.h : p.w,
+                  cutW: p.is_rotated ? p.w : p.h,
+                  edges: origPart?.edges || { T:false, B:false, L:false, R:false },
+                  grain: origPart?.grain || 'N',
+                  drillHoles: origPart?.drillHoles
+                };
+              })
+            })),
+            totalSheetsUsed: wasmRes.layouts.length,
+            totalUtilization: actualUtilization,
+            overallWastePercent: actualWaste,
+            totalPartsArea,
+            totalBandingLength: 0, // Computed in UI or later
+            unplacedParts: wasmRes.unplaced_parts.map((p: any) => ({
+              name: p.name,
+              qty: p.quantity
+            }))
+          };
+          
+          setResult(transformedResult);
+          success = true;
+        } else {
+          console.warn("[App] WASM Worker failed or returned non-success status:", wasmRes);
+        }
+      } catch (err) {
+        console.error("[App] Worker calculation error:", err);
+      }
+    }
+
+    if (!success) {
+      console.log("[App] Running fallback JS-based packing algorithm...");
+      const updatedResult = runPacking(parts, activeSettings);
+      setResult(updatedResult);
+
+      if (compareResults) {
+        const comp = compareAlgorithms(parts, activeSettings);
+        setCompareResults(comp);
+      }
+    }
+
+    setIsCalculating(false);
+  };
+
+  const handleLanguageToggle = () => {
+    setLanguage(prev => prev === 'English' ? 'Hindi' : 'English');
+  };
+
+  const handleCompareAlgos = async () => {
+    setIsComparing(true);
+    // short delay to show loading state
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const comp = compareAlgorithms(parts, settings);
