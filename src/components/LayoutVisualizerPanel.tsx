@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from 'react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { PackingResult, Language, SheetSettings, PackedPart, SheetLayout } from '../types';
 import { convertMmToUnit, convertToMm, getEdgeBandingSummary } from '../utils/packer';
