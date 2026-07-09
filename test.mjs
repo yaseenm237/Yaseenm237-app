@@ -8,7 +8,7 @@ async function main() {
   const input = {
     stock: { length: 2440, width: 1220 },
     parts: [{ id: "1", name: "door", length: 800, width: 390, quantity: 18 }],
-    settings: { kerf: 0 }
+    settings: { kerf: 0, algo: "MaxRects", respectGrain: false }
   };
   const result = run_optimizer(input);
   console.log(`Used ${result.layouts.length} sheets`);
