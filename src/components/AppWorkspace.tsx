@@ -418,6 +418,10 @@ export default function AppWorkspace() {
                 onPrint={handlePrint}
                 onExportCsv={handleExportCsv}
                 onExportJson={handleExportJson}
+                onUpdateSettings={(updated) => {
+                  setSettings(updated);
+                  calculateResult(updated);
+                }}
               />
             ) : (
               <div className="bg-white rounded-2xl border border-slate-200/80 p-8 shadow-sm text-center text-slate-400 flex flex-col items-center justify-center h-96 gap-4">

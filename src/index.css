@@ -25,7 +25,7 @@ html.dark #app-container {
   background-color: #030712 !important;
 }
 
-/* Style cards, panels, headers, modas etc in dark mode */
+/* Style cards, panels, headers, modals etc in dark mode */
 html.dark .bg-white,
 html.dark #sidebar-settings > div,
 html.dark #cutting-list-panel,
@@ -98,7 +98,7 @@ html.dark table td {
 
 html.dark tr:hover,
 html.dark tbody tr:hover {
-  background-color: #1e293b/40 !important;
+  background-color: rgba(30, 41, 59, 0.4) !important;
 }
 
 /* Floating overlays & drop-downs */

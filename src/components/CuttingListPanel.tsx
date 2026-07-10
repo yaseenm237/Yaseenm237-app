@@ -495,12 +495,21 @@ export default function CuttingListPanel({
                           </optgroup>
                         )}
                         <optgroup label={isHindi ? "कच्चा बोर्ड (Raw Boards)" : "Raw Stock Boards"}>
-                          {settings.stockItems?.map(item => (
+                          {settings.stockItems?.filter(item => !item.isOffcut).map(item => (
                             <option key={item.id} value={item.id}>
                               {item.name} ({item.thickness || 18}mm)
                             </option>
                           ))}
                         </optgroup>
+                        {settings.stockItems?.some(item => item.isOffcut) && (
+                          <optgroup label={isHindi ? "कतरन बोर्ड (Offcuts / Leftovers)" : "Offcuts / Leftovers"}>
+                            {settings.stockItems?.filter(item => item.isOffcut).map(item => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                   )}

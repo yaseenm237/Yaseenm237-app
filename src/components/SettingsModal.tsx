@@ -22,6 +22,16 @@ const ALGORITHMS = [
   { key: 'MaxRectsBssf', labelEn: 'MaxRects BSSF (CNC Nesting / Dense)', labelHi: 'मैक्सरेक्ट्स BSSF (CNC राउटर / सघन)' }
 ];
 
+const STANDARD_THICKNESSES: Record<string, number[]> = {
+  Plywood: [6, 8, 12, 15, 16, 18, 19, 25],
+  MDF: [6, 8, 12, 15, 16.5, 18, 25],
+  WPC: [6, 12, 17, 18],
+  'Multi-board': [12, 17, 18],
+  Melamine: [18],
+  Sunmica: [0.8, 1.0, 1.2, 1.5],
+  Other: []
+};
+
 export default function SettingsModal({
   settings,
   onChange,
@@ -127,10 +137,14 @@ export default function SettingsModal({
         ...(prev.stockItems || []),
         {
           id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
-          name: isHindi ? 'नया बोर्ड' : 'New Board',
+          name: isHindi ? '18mm प्लाईवुड' : '18mm Plywood',
           length: prev.unit === 'MM' ? 2440 : prev.unit === 'Inch' ? 96 : 244,
           width: prev.unit === 'MM' ? 1220 : prev.unit === 'Inch' ? 48 : 122,
-          cost: 0
+          cost: 0,
+          category: 'Plywood',
+          thickness: 18,
+          isOffcut: false,
+          quantity: 10
         }
       ]
     }));
@@ -333,79 +347,203 @@ export default function SettingsModal({
             </h3>
             
             <div className="space-y-3">
-              {stockItems.map((item, idx) => (
-                <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center bg-slate-50 p-4 rounded-xl border border-slate-200 relative group hover:border-indigo-300 transition-colors">
-                  <div className="md:col-span-3">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      {isHindi ? 'मटीरियल का नाम (जैसे: प्लाईवुड, MDF)' : 'Material Name (e.g. Plywood, MDF)'}
-                    </label>
-                    <input
-                      type="text"
-                      value={item.name}
-                      placeholder={isHindi ? 'उदा. प्लाईवुड' : 'e.g. Plywood'}
-                      onChange={(e) => handleUpdateStock(item.id, 'name', e.target.value)}
-                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
-                    />
+              {stockItems.map((item, idx) => {
+                const cat = item.category || 'Plywood';
+                const thicknesses = STANDARD_THICKNESSES[cat] || [];
+                const isCustomTh = item.thickness !== undefined && !thicknesses.includes(item.thickness);
+
+                return (
+                  <div key={item.id} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 hover:border-indigo-300 transition-all shadow-sm space-y-4">
+                    {/* Row 1: Category, Thickness, Stock Type, Qty */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                      {/* Category */}
+                      <div className="md:col-span-3">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'मटीरियल कैटेगरी' : 'Material Category'}
+                        </label>
+                        <select
+                          value={cat}
+                          onChange={(e) => {
+                            const newCat = e.target.value as any;
+                            handleUpdateStock(item.id, 'category', newCat);
+                            const defaultThickness = STANDARD_THICKNESSES[newCat]?.[0] || 18;
+                            handleUpdateStock(item.id, 'thickness', defaultThickness);
+                            // Auto generate name
+                            handleUpdateStock(item.id, 'name', `${defaultThickness}mm ${newCat}`);
+                          }}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold text-slate-800 bg-white"
+                        >
+                          <option value="Plywood">Plywood (प्लाईवुड)</option>
+                          <option value="MDF">MDF (एमडीएफ)</option>
+                          <option value="WPC">WPC (डब्ल्यूपीसी)</option>
+                          <option value="Melamine">Melamine (मेलामाइल)</option>
+                          <option value="Multi-board">Multi-board (मल्टी-बोर्ड)</option>
+                          <option value="Sunmica">Sunmica / Laminate (सनमाइका)</option>
+                          <option value="Other">Other (अन्य)</option>
+                        </select>
+                      </div>
+
+                      {/* Thickness Select & Custom input */}
+                      <div className="md:col-span-3 flex gap-2">
+                        <div className="flex-1">
+                          <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                            {isHindi ? 'मानक मोटाई (Grade)' : 'Standard Grade'}
+                          </label>
+                          <select
+                            value={isCustomTh ? 'custom' : (item.thickness || 18).toString()}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val !== 'custom') {
+                                const thNum = parseFloat(val);
+                                handleUpdateStock(item.id, 'thickness', thNum);
+                                handleUpdateStock(item.id, 'name', `${thNum}mm ${cat}`);
+                              } else {
+                                handleUpdateStock(item.id, 'thickness', 0); // custom edit
+                              }
+                            }}
+                            className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-semibold text-slate-700 bg-white"
+                          >
+                            {thicknesses.map(t => (
+                              <option key={t} value={t.toString()}>{t} mm</option>
+                            ))}
+                            <option value="custom">{isHindi ? 'कस्टम...' : 'Custom...'}</option>
+                          </select>
+                        </div>
+                        {isCustomTh && (
+                          <div className="w-20 shrink-0">
+                            <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                              {isHindi ? 'मोटाई' : 'Thick'}
+                            </label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              value={item.thickness || ''}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value) || 0;
+                                handleUpdateStock(item.id, 'thickness', val);
+                                handleUpdateStock(item.id, 'name', `${val}mm ${cat}`);
+                              }}
+                              className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Stock Type (Full vs Offcut) */}
+                      <div className="md:col-span-3">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'बोर्ड का प्रकार' : 'Board Type'}
+                        </label>
+                        <div className="flex gap-1.5 p-1 bg-slate-200/50 rounded-lg">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStock(item.id, 'isOffcut', false)}
+                            className={`flex-1 text-center text-[10px] py-1 font-bold rounded-md transition-colors ${
+                              !item.isOffcut
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {isHindi ? 'पूर्ण शीट' : 'Full Sheet'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStock(item.id, 'isOffcut', true)}
+                            className={`flex-1 text-center text-[10px] py-1 font-bold rounded-md transition-colors ${
+                              item.isOffcut
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {isHindi ? 'कतरन' : 'Offcut'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Quantity */}
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'मात्रा (Qty)' : 'Stock Qty'}
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity === undefined ? '' : item.quantity}
+                          onChange={(e) => handleUpdateStock(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold text-center"
+                        />
+                      </div>
+
+                      {/* Remove */}
+                      <div className="md:col-span-1 flex justify-end">
+                        <button
+                          onClick={() => handleRemoveStock(item.id)}
+                          className="p-2 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors"
+                          title="Remove"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Name, Length, Width, Cost */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-3 border-t border-slate-200/60 items-center">
+                      {/* Name */}
+                      <div className="md:col-span-4">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'मटीरियल नाम (SKU Label)' : 'Material SKU Label'}
+                        </label>
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => handleUpdateStock(item.id, 'name', e.target.value)}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-semibold text-slate-700"
+                        />
+                      </div>
+
+                      {/* Length */}
+                      <div className="md:col-span-3">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'लंबाई' : 'Length'} ({localSettings.unit})
+                        </label>
+                        <input
+                          type="number"
+                          value={item.length || ''}
+                          onChange={(e) => handleUpdateStock(item.id, 'length', parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
+                        />
+                      </div>
+
+                      {/* Width */}
+                      <div className="md:col-span-3">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'चौड़ाई' : 'Width'} ({localSettings.unit})
+                        </label>
+                        <input
+                          type="number"
+                          value={item.width || ''}
+                          onChange={(e) => handleUpdateStock(item.id, 'width', parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
+                        />
+                      </div>
+
+                      {/* Cost */}
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">
+                          {isHindi ? 'कीमत / शीट' : 'Sheet Cost'}
+                        </label>
+                        <input
+                          type="number"
+                          value={item.cost || ''}
+                          onChange={(e) => handleUpdateStock(item.id, 'cost', parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      {isHindi ? 'लंबाई' : 'Length'} ({localSettings.unit})
-                    </label>
-                    <input
-                      type="number"
-                      value={item.length || ''}
-                      onChange={(e) => handleUpdateStock(item.id, 'length', parseFloat(e.target.value))}
-                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      {isHindi ? 'चौड़ाई' : 'Width'} ({localSettings.unit})
-                    </label>
-                    <input
-                      type="number"
-                      value={item.width || ''}
-                      onChange={(e) => handleUpdateStock(item.id, 'width', parseFloat(e.target.value))}
-                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      {isHindi ? 'मोटाई (Thickness)' : 'Thickness'} (mm)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={item.thickness === undefined ? '' : item.thickness}
-                      onChange={(e) => handleUpdateStock(item.id, 'thickness', parseFloat(e.target.value) || 0)}
-                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      {isHindi ? 'मात्रा (Qty)' : 'Qty'}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={item.quantity === undefined ? '' : item.quantity}
-                      onChange={(e) => handleUpdateStock(item.id, 'quantity', parseInt(e.target.value) || 1)}
-                      placeholder="∞ (असीमित)"
-                      className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  <div className="md:col-span-1 flex justify-end">
-                    <button
-                      onClick={() => handleRemoveStock(item.id)}
-                      className="p-2 text-rose-400 hover:bg-rose-100 hover:text-rose-600 rounded-lg transition-colors mt-4 md:mt-0"
-                      title="Remove"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <button

@@ -47,6 +47,8 @@ export interface StockItem {
   cost: number;
   quantity?: number; // Quantity available in stock
   thickness?: number; // Thickness of base board in mm (e.g. 16 or 18)
+  category?: 'Plywood' | 'MDF' | 'WPC' | 'Melamine' | 'Multi-board' | 'Sunmica' | 'Other'; // Material Category
+  isOffcut?: boolean; // Whether this is an offcut
 }
 
 export interface Worker {
@@ -118,6 +120,7 @@ export interface SheetSettings {
   sunmicaItems?: SunmicaItem[]; // List of available Sunmica (laminate) materials
   recipes?: MaterialRecipe[]; // Custom Material Recipes (Pressed Panels)
   respectGrain?: boolean; // Whether to strictly respect grain rules
+  lockedLayouts?: SheetLayout[]; // List of locked layouts for incremental optimization
 }
 
 export interface PackedPart {
@@ -151,6 +154,7 @@ export interface SheetLayout {
   wastePercent: number;
   wasteRects?: { x: number; y: number; w: number; h: number }[];
   materialName?: string; // Optional name of the material for this sheet
+  isLocked?: boolean; // If this layout is locked (incremental optimization)
 }
 
 export interface PackingResult {
@@ -192,4 +196,16 @@ export interface UserProfile {
 export interface AppConfig {
   users: UserProfile[];
   activeUserId: string | null;
+}
+
+export interface CuttingInstruction {
+  stepId: number;
+  type: 'TRIM_CUT' | 'RIP_CUT' | 'CROSS_CUT';
+  direction: 'HORIZONTAL' | 'VERTICAL';
+  position: number; // position in mm
+  fenceSetting: number; // fence setting in mm
+  advice: string; // advice string in hindi or english
+  localName: string; // local vernacular carpentry name
+  affectedPartIds: string[];
+  triggerVoice: boolean;
 }

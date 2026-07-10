@@ -3,13 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { PackingResult, Language, SheetSettings, PackedPart, SheetLayout } from '../types';
+import { PackingResult, Language, SheetSettings, PackedPart, SheetLayout, CuttingInstruction } from '../types';
 import { convertMmToUnit, convertToMm, getEdgeBandingSummary } from '../utils/packer';
-import { Download, Printer, Layout, Percent, ClipboardCheck, Ruler, AlertCircle, ZoomIn, ZoomOut, Sliders, Check, X, RotateCw, Undo2 } from 'lucide-react';
+import { generateSahiraSteps } from '../utils/sequencer';
+import { getStoredVoiceConfig, saveVoiceConfig, humanizeHindiText, VoiceConfig } from '../utils/voiceConfig';
+import { AdvancedSahiraTuner } from '../utils/SahiraTuner';
+import { Download, Printer, Layout, Percent, ClipboardCheck, Ruler, AlertCircle, ZoomIn, ZoomOut, Sliders, Check, X, RotateCw, Undo2, PlusCircle, Lock, Unlock, Volume2, VolumeX, Mic, MicOff, Pause, CornerDownRight, Sparkles, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 
 interface LayoutVisualizerPanelProps {
   result: PackingResult;
@@ -19,6 +22,7 @@ interface LayoutVisualizerPanelProps {
   onPrint: () => void;
   onExportCsv: () => void;
   onExportJson: () => void;
+  onUpdateSettings?: (settings: SheetSettings) => void;
 }
 
 // Generate unique colors based on part name/size
@@ -45,6 +49,18 @@ function getPartColor(name: string, index: number): string {
   return COLOR_PALETTE[colorIndex];
 }
 
+export function playSahiraAudio(text: string, onStart?: () => void, onEnd?: () => void) {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  
+  const config = getStoredVoiceConfig();
+  const tuner = new AdvancedSahiraTuner();
+  const cleanText = humanizeHindiText(text, config);
+  const isComplex = text.includes('mm') || text.includes('x') || text.includes('फेंस') || cleanText.length > 50;
+  const level = isComplex ? 'high' : 'low';
+  
+  tuner.speakPro(cleanText, level, config, onStart, onEnd);
+}
+
 export default function LayoutVisualizerPanel({
   result,
   settings,
@@ -52,7 +68,8 @@ export default function LayoutVisualizerPanel({
   translations,
   onPrint,
   onExportCsv,
-  onExportJson
+  onExportJson,
+  onUpdateSettings
 }: LayoutVisualizerPanelProps) {
   const isHindi = language === 'Hindi';
 
@@ -70,6 +87,205 @@ export default function LayoutVisualizerPanel({
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ clientX: number; clientY: number; startX: number; startY: number; partId: string } | null>(null);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+
+  const [savedOffcuts, setSavedOffcuts] = useState<string[]>([]);
+
+  // Sahira Voice Assistant & Cutting Sequencer States
+  const [activeStepIndices, setActiveStepIndices] = useState<Record<number, number>>({});
+  const [voiceRecognitionInstances, setVoiceRecognitionInstances] = useState<Record<number, any>>({});
+  const [isListeningState, setIsListeningState] = useState<Record<number, boolean>>({});
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState<boolean>(true);
+  const [isCurrentlySpeaking, setIsCurrentlySpeaking] = useState<boolean>(false);
+
+  // Voice Tuning Lab States
+  const [showTuningLab, setShowTuningLab] = useState<boolean>(false);
+  const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(getStoredVoiceConfig);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [testText, setTestText] = useState<string>(isHindi ? 'नमस्ते मिस्त्री भाई, मैं सहिरा हूँ! यह मेरी नई आवाज़ है, कैसी लग रही है आपको?' : 'Hello master carpenter, I am Sahira! This is my new voice tuning, how do you like it?');
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      setAvailableVoices(voices);
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  // Voice command processor
+  const handleVoiceCommand = (sheetIndex: number, command: string, steps: CuttingInstruction[]) => {
+    const currentStep = activeStepIndices[sheetIndex] ?? 0;
+    
+    // Hindi/English commands
+    const isNext = command.includes('अगला') || command.includes('आगे') || command.includes('नेक्स्ट') || command.includes('next') || command.includes('okay') || command.includes('ओके');
+    const isBack = command.includes('पीछे') || command.includes('बैक') || command.includes('पहले') || command.includes('back') || command.includes('previous');
+    const isRepeat = command.includes('फिर से') || command.includes('दोहराएं') || command.includes('बोलो') || command.includes('सुनो') || command.includes('repeat') || command.includes('say again');
+
+    if (isNext) {
+      if (currentStep < steps.length - 1) {
+        const nextStep = currentStep + 1;
+        setActiveStepIndices(prev => ({ ...prev, [sheetIndex]: nextStep }));
+        speakInstruction(steps[nextStep].advice);
+      } else {
+        speakInstruction(isHindi ? "यह आखरी स्टेप है, बधाई हो!" : "This is the last step, congratulations!");
+      }
+    } else if (isBack) {
+      if (currentStep > 0) {
+        const prevStep = currentStep - 1;
+        setActiveStepIndices(prev => ({ ...prev, [sheetIndex]: prevStep }));
+        speakInstruction(steps[prevStep].advice);
+      } else {
+        speakInstruction(isHindi ? "यह पहला स्टेप है।" : "This is the first step.");
+      }
+    } else if (isRepeat) {
+      if (steps[currentStep]) {
+        speakInstruction(steps[currentStep].advice);
+      }
+    }
+  };
+
+  const speakInstruction = (text: string) => {
+    if (!isVoiceEnabled) return;
+    setIsCurrentlySpeaking(true);
+    playSahiraAudio(text, () => {}, () => setIsCurrentlySpeaking(false));
+  };
+
+  const toggleListening = (sheetIndex: number, steps: CuttingInstruction[]) => {
+    const isCurrentlyListening = !!isListeningState[sheetIndex];
+    
+    if (isCurrentlyListening) {
+      // Stop listening
+      const rec = voiceRecognitionInstances[sheetIndex];
+      if (rec) {
+        try {
+          rec.stop();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      setIsListeningState(prev => ({ ...prev, [sheetIndex]: false }));
+      setVoiceRecognitionInstances(prev => {
+        const copy = { ...prev };
+        delete copy[sheetIndex];
+        return copy;
+      });
+      speakInstruction(isHindi ? "सहिरा वॉइस असिस्टेंस बंद हुआ।" : "Sahira voice assistant deactivated.");
+    } else {
+      // Start listening
+      if (typeof window === 'undefined') return;
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert(isHindi ? "आपका ब्राउज़र स्पीच रिकग्निशन को सपोर्ट नहीं करता है।" : "Your browser does not support speech recognition.");
+        return;
+      }
+
+      try {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = 'hi-IN';
+
+        rec.onresult = (event: any) => {
+          const lastResultIndex = event.results.length - 1;
+          const command = event.results[lastResultIndex][0].transcript.trim().toLowerCase();
+          handleVoiceCommand(sheetIndex, command, steps);
+        };
+
+        rec.onerror = (e: any) => {
+          console.error("Speech Recognition Error", e);
+          if (e.error === 'not-allowed') {
+            alert(isHindi ? "सहिरा को आपके माइक तक पहुंचने की अनुमति नहीं है।" : "Sahira does not have permission to access your microphone.");
+          }
+          setIsListeningState(prev => ({ ...prev, [sheetIndex]: false }));
+        };
+
+        rec.onend = () => {
+          // Auto-restart if still flagged as listening to ensure non-blocking continuous listening
+          setIsListeningState(prev => {
+            if (prev[sheetIndex]) {
+              try {
+                rec.start();
+              } catch (err) {
+                console.error("Failed to restart speech recognition", err);
+              }
+            }
+            return prev;
+          });
+        };
+
+        rec.start();
+        setVoiceRecognitionInstances(prev => ({ ...prev, [sheetIndex]: rec }));
+        setIsListeningState(prev => ({ ...prev, [sheetIndex]: true }));
+        speakInstruction(isHindi ? "हाँ जी! सहिरा चालू है। आप कमांड दे सकते हैं।" : "Yes! Sahira is listening. Speak your command.");
+      } catch (err) {
+        console.error("Error starting speech recognition:", err);
+      }
+    }
+  };
+
+  const handleSaveOffcut = (w: { x: number; y: number; w: number; h: number }, wIdx: number, sheetIndex: number, materialName?: string) => {
+    if (!onUpdateSettings) return;
+
+    const lengthInUnit = convertMmToUnit(w.w, settings.unit);
+    const widthInUnit = convertMmToUnit(w.h, settings.unit);
+
+    // Try to guess thickness from materialName
+    let guessedThickness = 18;
+    if (materialName) {
+      const match = materialName.match(/(\d+(?:\.\d+)?)\s*mm/i);
+      if (match) {
+        guessedThickness = parseFloat(match[1]);
+      }
+    }
+
+    // Try to guess category from materialName
+    let guessedCategory: any = 'Plywood';
+    if (materialName) {
+      if (/mdf/i.test(materialName)) guessedCategory = 'MDF';
+      else if (/wpc/i.test(materialName)) guessedCategory = 'WPC';
+      else if (/melamine/i.test(materialName)) guessedCategory = 'Melamine';
+      else if (/multi/i.test(materialName)) guessedCategory = 'Multi-board';
+      else if (/mica/i.test(materialName) || /laminate/i.test(materialName)) guessedCategory = 'Sunmica';
+    }
+
+    const uniqueId = `offcut-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+    
+    // Auto-generate name with size for clear tracking in settings
+    const nameWithDims = `${guessedThickness}mm ${guessedCategory} Offcut (${Number(lengthInUnit.toFixed(1))}x${Number(widthInUnit.toFixed(1))})`;
+
+    const newStockItem = {
+      id: uniqueId,
+      name: nameWithDims,
+      length: Number(lengthInUnit.toFixed(1)),
+      width: Number(widthInUnit.toFixed(1)),
+      thickness: guessedThickness,
+      quantity: 1,
+      isOffcut: true,
+      cost: 0,
+      category: guessedCategory
+    };
+
+    const updatedStockItems = [
+      ...(settings.stockItems || []),
+      newStockItem
+    ];
+
+    onUpdateSettings({
+      ...settings,
+      stockItems: updatedStockItems
+    });
+
+    setSavedOffcuts(prev => [...prev, `${sheetIndex}-${wIdx}`]);
+  };
 
   // Only clear overrides when physical sheet dimensions, unit, trim margin, or blade thickness parameters change
   const lastSettingsRef = React.useRef({
@@ -597,6 +813,26 @@ export default function LayoutVisualizerPanel({
             >
               {isHindi ? "कटिंग पाथ" : "Cut Path"}
             </button>
+            <button
+              id="voice-toggle-btn"
+              type="button"
+              onClick={() => {
+                const newVal = !isVoiceEnabled;
+                setIsVoiceEnabled(newVal);
+                if (newVal) {
+                  playSahiraAudio(isHindi ? "आवाज़ चालू हुई" : "Audio activated");
+                }
+              }}
+              className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                isVoiceEnabled
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-100'
+                  : 'bg-white text-slate-500 border-slate-200 hover:text-slate-700 hover:bg-white'
+              }`}
+              title={isHindi ? "सहिरा आवाज़ सहायक चालू/बंद करें" : "Turn Sahira Voice Assistant On/Off"}
+            >
+              {isVoiceEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+              {isHindi ? "आवाज़" : "Voice"}
+            </button>
           </div>
 
           <button
@@ -643,6 +879,11 @@ export default function LayoutVisualizerPanel({
           const svgH = rawWMm + 2 * pad;
           
           const currentParts = editingSheetIndex === layout.sheetIndex ? editingParts : layout.parts;
+          const isSheetLocked = layout.isLocked || (settings.lockedLayouts || []).some(l => l.sheetIndex === layout.sheetIndex);
+          
+          const sahiraSteps = generateSahiraSteps(layout, settings);
+          const activeStepIdx = activeStepIndices[layout.sheetIndex] ?? 0;
+          const activeStep = sahiraSteps[activeStepIdx];
 
           return (
             <div 
@@ -663,6 +904,12 @@ export default function LayoutVisualizerPanel({
                     {customLayoutOverrides[layout.sheetIndex] && (
                       <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
                         {isHindi ? "मैनुअल रूप से बदला गया" : "Manually Adjusted"}
+                      </span>
+                    )}
+                    {isSheetLocked && (
+                      <span className="bg-rose-50 text-rose-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-rose-200 flex items-center gap-1 shadow-sm">
+                        <Lock size={10} className="shrink-0 text-rose-600 animate-pulse" />
+                        {isHindi ? "ताला लगा (स्थिर)" : "Locked (Frozen)"}
                       </span>
                     )}
                   </h4>
@@ -794,21 +1041,66 @@ export default function LayoutVisualizerPanel({
                         </button>
                       </div>
 
+                      {/* Lock / Unlock Toggle Button */}
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingSheetIndex(layout.sheetIndex);
-                          setEditingParts([...layout.parts]);
-                          setSelectedPartId(null);
+                          if (!onUpdateSettings) return;
+                          const currentLocked = settings.lockedLayouts || [];
+                          const isAlreadyLocked = currentLocked.some(l => l.sheetIndex === layout.sheetIndex);
+                          let nextLocked: SheetLayout[] = [];
+                          
+                          if (isAlreadyLocked) {
+                            nextLocked = currentLocked.filter(l => l.sheetIndex !== layout.sheetIndex);
+                          } else {
+                            const currentLayout = customLayoutOverrides[layout.sheetIndex] || layout;
+                            nextLocked = [...currentLocked, { ...currentLayout, isLocked: true }];
+                          }
+                          
+                          onUpdateSettings({
+                            ...settings,
+                            lockedLayouts: nextLocked
+                          });
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-md shadow-indigo-100"
-                        title={isHindi ? "इस शीट को खुद सेट करें" : "Edit sheet layout manually"}
+                        className={`text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border shadow-sm hover:scale-[1.02] active:scale-95 ${
+                          isSheetLocked 
+                            ? "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200" 
+                            : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                        }`}
+                        title={isSheetLocked 
+                          ? (isHindi ? "इस शीट को दोबारा अनलॉक करें" : "Unlock this sheet") 
+                          : (isHindi ? "इस शीट के लेआउट को लॉक करें" : "Lock this sheet layout")
+                        }
                       >
-                        <Sliders size={12} />
-                        {isHindi ? "कारपेंटर स्केलिंग" : "Carpenter Scaling"}
+                        {isSheetLocked ? <Lock size={12} className="text-rose-600 animate-pulse" /> : <Unlock size={12} className="text-amber-600" />}
+                        {isSheetLocked 
+                          ? (isHindi ? "ताला खोलें (Unlock)" : "Unlock Sheet") 
+                          : (isHindi ? "ताला लगाएं (Lock)" : "Lock Sheet")
+                        }
                       </button>
+
+                      {isSheetLocked ? (
+                        <div className="bg-slate-100 text-slate-400 text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-not-allowed border border-slate-200">
+                          <Lock size={12} className="text-slate-400" />
+                          {isHindi ? "सुरक्षित (Locked)" : "Locked Layout"}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSheetIndex(layout.sheetIndex);
+                            setEditingParts([...layout.parts]);
+                            setSelectedPartId(null);
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-md shadow-indigo-100"
+                          title={isHindi ? "इस शीट को खुद सेट करें" : "Edit sheet layout manually"}
+                        >
+                          <Sliders size={12} />
+                          {isHindi ? "कारपेंटर स्केलिंग" : "Carpenter Scaling"}
+                        </button>
+                      )}
                       
-                      {customLayoutOverrides[layout.sheetIndex] && (
+                      {!isSheetLocked && customLayoutOverrides[layout.sheetIndex] && (
                         <button
                           type="button"
                           onClick={() => {
@@ -1314,6 +1606,8 @@ export default function LayoutVisualizerPanel({
                         let strokeW = "1";
                         let strokeDash = undefined;
                         
+                        const isActiveCuttingPart = activeStep && activeStep.affectedPartIds?.includes(part.id);
+
                         if (isEditingThisSheet) {
                           if (isColliding || isOOB) {
                             rectFill = "#fca5a5"; // Soft red
@@ -1324,6 +1618,10 @@ export default function LayoutVisualizerPanel({
                             strokeColor = "#4f46e5"; // Indigo select glow
                             strokeW = "2.5";
                           }
+                        } else if (isActiveCuttingPart) {
+                          strokeColor = "#e11d48"; // Vivid crimson for active cut pieces
+                          strokeW = "4";
+                          strokeDash = "4,2";
                         }
 
                         return (
@@ -1488,6 +1786,32 @@ export default function LayoutVisualizerPanel({
                               );
                             })}
 
+                            {/* Active Cutting Badge Overlay */}
+                            {isActiveCuttingPart && drawW > 50 && drawH > 22 && (
+                              <g className="animate-pulse">
+                                <rect 
+                                  x={partX + drawW / 2 - 35} 
+                                  y={partY + drawH / 2 - 25} 
+                                  width="70" 
+                                  height="14" 
+                                  rx="3" 
+                                  fill="#e11d48" 
+                                />
+                                <text
+                                  x={partX + drawW / 2}
+                                  y={partY + drawH / 2 - 18}
+                                  textAnchor="middle"
+                                  dominantBaseline="middle"
+                                  fill="#ffffff"
+                                  fontSize="7.5"
+                                  fontWeight="black"
+                                  className="select-none pointer-events-none"
+                                >
+                                  {isHindi ? "कटिंग जारी" : "CUTTING"}
+                                </text>
+                              </g>
+                            )}
+
                             {/* Rich Tooltip */}
                             <title>
                               {part.name}&#10;
@@ -1502,6 +1826,151 @@ export default function LayoutVisualizerPanel({
                         );
                       });
                     })()}
+
+                    {/* 3.4. Sahira Active Cutting Laser Guide & Minimap Overlay */}
+                    {activeStep && (
+                      <g id={`sahira-active-cut-guide-${layout.sheetIndex}`}>
+                        {(() => {
+                          const isVerticalCut = activeStep.direction === 'VERTICAL';
+                          const pos = pad + T + activeStep.position;
+                          
+                          // Determine line endpoints
+                          let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                          let arrowD = "";
+                          let labelX = 0, labelY = 0;
+                          
+                          if (isVerticalCut) {
+                            x1 = pos;
+                            y1 = pad + T;
+                            x2 = pos;
+                            y2 = pad + T + layout.height;
+                            
+                            // Glowing bounce arrow pointing downwards
+                            arrowD = `M ${pos - 8} ${y1 + 30} L ${pos} ${y1 + 45} L ${pos + 8} ${y1 + 30} Z`;
+                            labelX = pos;
+                            labelY = y1 + 15;
+                          } else {
+                            x1 = pad + T;
+                            y1 = pos;
+                            x2 = pad + T + layout.width;
+                            y2 = pos;
+                            
+                            // Glowing bounce arrow pointing rightwards
+                            arrowD = `M ${x1 + 30} ${pos - 8} L ${x1 + 45} ${pos} L ${x1 + 30} ${pos + 8} Z`;
+                            labelX = x1 + 15;
+                            labelY = pos;
+                          }
+                          
+                          return (
+                            <g className="pointer-events-none transform-gpu">
+                              {/* Minimap Info Box Overlay */}
+                              <foreignObject 
+                                x={pad + 10} 
+                                y={pad + 10} 
+                                width="240" 
+                                height="100"
+                                className="drop-shadow-2xl"
+                              >
+                                <div className="bg-slate-900/95 border-2 border-rose-500 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white font-sans flex flex-col gap-2">
+                                  <div className="flex justify-between items-center border-b border-slate-700/80 pb-1.5">
+                                     <span className="text-[10px] uppercase font-black text-rose-400 tracking-widest flex items-center gap-1.5">
+                                       <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping"></div>
+                                       {isHindi ? "लाइव कटिंग मैपिंग" : "LIVE CUT MAP"}
+                                     </span>
+                                     <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-md font-black">
+                                        STEP {activeStep.stepId}
+                                     </span>
+                                  </div>
+                                  <div className="flex gap-3 items-center mt-1">
+                                     <div className="w-10 h-10 bg-slate-800 rounded-lg border border-slate-600 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
+                                       {activeStep.direction === 'VERTICAL' ? (
+                                          <div className="w-0.5 h-6 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
+                                       ) : (
+                                          <div className="w-6 h-0.5 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
+                                       )}
+                                     </div>
+                                     <div className="overflow-hidden">
+                                       <div className="text-[12px] font-black text-slate-100 truncate">{activeStep.localName}</div>
+                                       <div className="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-1.5">
+                                         {isHindi ? 'फेंस (Fence):' : 'Fence:'} 
+                                         <span className="text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{activeStep.fenceSetting}</span>
+                                       </div>
+                                     </div>
+                                  </div>
+                                </div>
+                              </foreignObject>
+
+                              {/* Glowing laser background line */}
+                              <line 
+                                x1={x1} 
+                                y1={y1} 
+                                x2={x2} 
+                                y2={y2} 
+                                stroke="#f43f5e" 
+                                strokeWidth="16" 
+                                strokeLinecap="round"
+                                opacity="0.25"
+                                className="blur-[4px]"
+                              />
+                              
+                              {/* Primary bright cutting line */}
+                              <line 
+                                x1={x1} 
+                                y1={y1} 
+                                x2={x2} 
+                                y2={y2} 
+                                stroke="#f43f5e" 
+                                strokeWidth="3" 
+                                strokeDasharray="8,4"
+                                opacity="0.95"
+                              />
+                              
+                              {/* Arrow representing cutting direction */}
+                              <path 
+                                d={arrowD} 
+                                fill="#f43f5e" 
+                                className="animate-pulse drop-shadow-md"
+                              />
+
+                              {/* Glowing target crosshair/badge */}
+                              <circle 
+                                cx={labelX} 
+                                cy={labelY} 
+                                r="12" 
+                                fill="#f43f5e" 
+                                stroke="#ffffff" 
+                                strokeWidth="2.5" 
+                                className="drop-shadow-lg"
+                              />
+                              <text 
+                                x={labelX} 
+                                y={labelY} 
+                                textAnchor="middle" 
+                                dominantBaseline="central" 
+                                fill="#ffffff" 
+                                fontSize="10" 
+                                fontWeight="black"
+                              >
+                                {activeStep.stepId}
+                              </text>
+
+                              {/* Saw Icon Label */}
+                              <text
+                                x={labelX + (isVerticalCut ? 20 : 0)}
+                                y={labelY + (isVerticalCut ? 0 : 20)}
+                                textAnchor={isVerticalCut ? "start" : "middle"}
+                                dominantBaseline={isVerticalCut ? "central" : "hanging"}
+                                fill="#f43f5e"
+                                fontSize="18"
+                                className="animate-pulse drop-shadow-md"
+                              >
+                                ✂️
+                              </text>
+                            </g>
+                          );
+                        })()}
+                      </g>
+                    )}
 
                     {/* 3.5. Cut Sequence Path */}
                     {showCutSequence && (() => {
@@ -1735,12 +2204,14 @@ export default function LayoutVisualizerPanel({
                             <th className="pb-2">#</th>
                             <th className="pb-2">{isHindi ? 'आकार (Dimensions)' : 'Dimensions'}</th>
                             <th className="pb-2">{isHindi ? 'प्रकार' : 'Status'}</th>
+                            {onUpdateSettings && <th className="pb-2 pl-2">{isHindi ? 'कार्रवाई' : 'Action'}</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-600">
                           {layout.wasteRects.map((w, wIdx) => {
                             // Determine if waste piece is highly reusable (e.g., larger than 300mm on both sides)
                             const isReusable = w.w >= 300 && w.h >= 300;
+                            const isSaved = savedOffcuts.includes(`${layout.sheetIndex}-${wIdx}`);
                             return (
                               <tr key={wIdx} className="hover:bg-slate-100/30 whitespace-nowrap">
                                 <td className="py-2 text-[10px] text-slate-400 font-bold font-mono">
@@ -1760,6 +2231,28 @@ export default function LayoutVisualizerPanel({
                                     </span>
                                   )}
                                 </td>
+                                {onUpdateSettings && (
+                                  <td className="py-2 pl-2">
+                                    {isReusable ? (
+                                      isSaved ? (
+                                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                                          <Check size={12} /> {isHindi ? 'सहेजा गया' : 'Saved'}
+                                        </span>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleSaveOffcut(w, wIdx, layout.sheetIndex, layout.materialName)}
+                                          className="flex items-center gap-1 text-[10px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-2 py-0.5 rounded font-bold transition-all border border-indigo-200"
+                                          title={isHindi ? 'स्टॉक सूची में जोड़ें' : 'Save to Stock material list'}
+                                        >
+                                          <PlusCircle size={10} />
+                                          {isHindi ? 'सहेजें' : 'Save'}
+                                        </button>
+                                      )
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">-</span>
+                                    )}
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}
@@ -1773,6 +2266,550 @@ export default function LayoutVisualizerPanel({
                   )}
                 </div>
               </div>
+
+              {/* 3.6. 🎙️ Sahira: Voice Workshop Assistant & Cutting Sequencer */}
+              {isVoiceEnabled && (() => {
+                const sahiraSteps = generateSahiraSteps(layout, settings);
+                if (sahiraSteps.length === 0) return null;
+                const activeStepIdx = activeStepIndices[layout.sheetIndex] ?? 0;
+                const activeStep = sahiraSteps[activeStepIdx];
+                const isListening = !!isListeningState[layout.sheetIndex];
+
+                return (
+                  <div className="border-t border-slate-800 bg-slate-900 text-slate-100 rounded-b-2xl overflow-hidden p-6 animate-fade-in">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-800 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-2xl bg-indigo-600 text-white shadow-lg ${isListening ? 'animate-pulse bg-rose-600 shadow-rose-900/30' : 'shadow-indigo-900/30'}`}>
+                          <Sparkles size={20} className={isListening ? 'animate-spin duration-1000' : ''} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black tracking-tight text-white flex items-center gap-2">
+                            {isHindi ? "🎙️ सहिरा: वॉइस वर्कशॉप असिस्टेंट" : "🎙️ Sahira: Voice Workshop Assistant"}
+                            {isListening && (
+                              <span className="inline-flex items-center gap-1 bg-rose-500/10 text-rose-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-rose-500/20 animate-pulse">
+                                ● {isHindi ? "सुन रही हूँ..." : "LISTENING..."}
+                              </span>
+                            )}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                            {isHindi ? "साहिरा इंटीरियर - स्मार्ट कारपेंट्री ऑपरेटर" : "Sahira Interior - Smart Carpentry Operator"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Global Voice Assistant Toggle Switches */}
+                      <div className="flex flex-wrap items-center gap-2.5 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50 self-start md:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => toggleListening(layout.sheetIndex, sahiraSteps)}
+                          className={`flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                            isListening 
+                              ? 'bg-rose-600 text-white shadow-md shadow-rose-900/30 animate-pulse' 
+                              : 'bg-slate-700 text-slate-400 hover:text-slate-300'
+                          }`}
+                          title={isHindi ? "वॉइस कमांड एक्टिवेट करें (माइक चालू/बंद)" : "Toggle mic voice recognition"}
+                        >
+                          {isListening ? <Mic size={14} /> : <MicOff size={14} />}
+                          {isHindi ? (isListening ? "माइक एक्टिव" : "माइक बंद") : (isListening ? "Mic ON" : "Mic OFF")}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowTuningLab(!showTuningLab)}
+                          className={`flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                            showTuningLab 
+                              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-900/30 font-black' 
+                              : 'bg-slate-700 text-slate-400 hover:text-slate-300 hover:bg-slate-600'
+                          }`}
+                          title={isHindi ? "आवाज़ ट्यूनिंग लैब खोलें" : "Open voice tuning lab"}
+                        >
+                          <Sliders size={14} />
+                          {isHindi ? "आवाज़ ट्यूनिंग लैब" : "Voice Tuning Lab"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 🎙️ Voice Tuning Lab Dashboard Panel */}
+                    {showTuningLab && (
+                      <div className="mb-6 bg-slate-950/80 rounded-2xl p-5 border border-amber-500/30 shadow-2xl animate-fade-in text-slate-200">
+                        <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3.5 mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                              <Sliders size={16} />
+                            </div>
+                            <div>
+                              <h5 className="text-xs font-black uppercase text-amber-400 tracking-wider">
+                                {isHindi ? "साहिरा आवाज़ ट्यूनिंग लैब" : "Sahira Voice Tuning Lab"}
+                              </h5>
+                              <p className="text-[10px] text-slate-400 font-medium">
+                                {isHindi 
+                                  ? "अपने ब्राउज़र के अनुसार सहिरा की आवाज़ को अत्यधिक मानवीय और सुरीली बनाएं" 
+                                  : "Tune and humanize Sahira's vocal characteristics to sound natural in your browser"}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[9px] uppercase font-black tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md animate-pulse">
+                            {isHindi ? "सक्रिय ट्यून" : "Active Tune"}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+                          {/* Left Column: Voice and Audio Parameters */}
+                          <div className="md:col-span-7 space-y-4">
+                            {/* Voice Selection */}
+                            <div>
+                              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                                {isHindi ? "1. उपलब्ध ब्राउज़र आवाज़ें (Hindi first)" : "1. Available Browser Voices"}
+                              </label>
+                              {availableVoices.length === 0 ? (
+                                <p className="text-xs text-rose-400 font-semibold bg-rose-950/30 p-2.5 rounded-lg border border-rose-900/30">
+                                  {isHindi 
+                                    ? "⚠️ कोई ब्राउज़र आवाज़ नहीं मिली! कृपया चेक करें कि आपका स्पीकर चालू है।" 
+                                    : "⚠️ No browser voices found! Make sure your system has audio output enabled."}
+                                </p>
+                              ) : (
+                                <select
+                                  value={voiceConfig.preferredVoiceName}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, preferredVoiceName: e.target.value };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="w-full bg-slate-900 text-xs border border-slate-800 rounded-lg px-3 py-2.5 text-slate-100 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                >
+                                  <option value="">{isHindi ? "— डिफ़ॉल्ट हिंदी आवाज़ चुनें (Google हिन्दी) —" : "— Default Auto-Hindi Voice —"}</option>
+                                  
+                                  {/* Hindi Group */}
+                                  <optgroup label={isHindi ? "हिंदी आवाज़ें (Hindi)" : "Hindi Voices"}>
+                                    {availableVoices
+                                      .filter(v => v.lang.toLowerCase().includes('hi'))
+                                      .map((v, i) => (
+                                        <option key={`${v.name}-${v.lang}-${i}`} value={v.name}>
+                                          {v.name} ({v.lang}) {v.localService ? '• Local' : '• Web'}
+                                        </option>
+                                      ))}
+                                  </optgroup>
+
+                                  {/* English Group */}
+                                  <optgroup label={isHindi ? "अंग्रेजी व अन्य आवाज़ें (English & Other)" : "English & Other Voices"}>
+                                    {availableVoices
+                                      .filter(v => !v.lang.toLowerCase().includes('hi'))
+                                      .map((v, i) => (
+                                        <option key={`${v.name}-${v.lang}-${i}`} value={v.name}>
+                                          {v.name} ({v.lang})
+                                        </option>
+                                      ))}
+                                  </optgroup>
+                                </select>
+                              )}
+                              <p className="text-[10px] text-slate-500 mt-1">
+                                {isHindi 
+                                  ? "💡 नोट: 'Google हिन्दी' या 'Microsoft Hemant' जैसी आवाज़ें सबसे नैचुरल लगती हैं।" 
+                                  : "💡 Tip: Select Google Hindi or local neural voices for the best human timber."}
+                              </p>
+                            </div>
+
+                            {/* Voice Properties Sliders */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                              {/* Rate */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{isHindi ? "गति (Rate)" : "Speed"}</span>
+                                  <span className="text-xs font-mono font-bold text-amber-400">{voiceConfig.rate}x</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.5"
+                                  max="1.5"
+                                  step="0.05"
+                                  value={voiceConfig.rate}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, rate: parseFloat(e.target.value) };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                />
+                                <span className="text-[9px] text-slate-500 block mt-1">{isHindi ? "0.85 साफ-सुथरी आवाज़ है" : "0.85 is clear for shops"}</span>
+                              </div>
+
+                              {/* Pitch */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{isHindi ? "पिच (Pitch)" : "Tone"}</span>
+                                  <span className="text-xs font-mono font-bold text-amber-400">{voiceConfig.pitch}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.5"
+                                  max="1.5"
+                                  step="0.05"
+                                  value={voiceConfig.pitch}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, pitch: parseFloat(e.target.value) };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                />
+                                <span className="text-[9px] text-slate-500 block mt-1">{isHindi ? "1.05 सबसे मधुर लगती है" : "1.05 sounds friendly"}</span>
+                              </div>
+
+                              {/* Volume */}
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{isHindi ? "शोर / वॉल्यूम" : "Volume"}</span>
+                                  <span className="text-xs font-mono font-bold text-amber-400">{Math.round(voiceConfig.volume * 100)}%</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.1"
+                                  max="1.0"
+                                  step="0.1"
+                                  value={voiceConfig.volume}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, volume: parseFloat(e.target.value) };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                />
+                                <span className="text-[9px] text-slate-500 block mt-1">{isHindi ? "हमेशा 100% रखें" : "Keep 100% for shop noise"}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right Column: Natural Humanization Filters & Quick Test Station */}
+                          <div className="md:col-span-5 space-y-4 flex flex-col justify-between">
+                            {/* Humanizer Toggles */}
+                            <div className="space-y-3 bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+                              <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                                {isHindi ? "2. स्मार्ट इंसानीकरण फ़िल्टर (Human Filters)" : "2. Smart Humanization Filters"}
+                              </span>
+                              
+                              {/* Phonetic toggle */}
+                              <label className="flex items-start gap-2.5 cursor-pointer group">
+                                <input
+                                  type="checkbox"
+                                  checked={voiceConfig.enablePhoneticHumanizer}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, enablePhoneticHumanizer: e.target.checked };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="rounded mt-0.5 text-amber-500 focus:ring-amber-500 bg-slate-950 border-slate-800"
+                                />
+                                <div>
+                                  <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">
+                                    {isHindi ? "फ़ोनेटिक सुधार (Phonetic Fixes)" : "Phonetic Fixes"}
+                                  </span>
+                                  <p className="text-[9px] text-slate-400 mt-0.5">
+                                    {isHindi 
+                                      ? "संख्याओं व इकाइयों को स्वाभाविक हिंदी बोली में बदलता है (जैसे 'एमएम' -> 'मिलीमीटर')." 
+                                      : "Speaks dimensions naturally (e.g., converts '1200x600' to '1200 by 600')."}
+                                  </p>
+                                </div>
+                              </label>
+
+                              {/* Breathing toggle */}
+                              <label className="flex items-start gap-2.5 cursor-pointer group pt-1 border-t border-slate-800/40">
+                                <input
+                                  type="checkbox"
+                                  checked={voiceConfig.enableNaturalBreathing}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, enableNaturalBreathing: e.target.checked };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="rounded mt-0.5 text-amber-500 focus:ring-amber-500 bg-slate-950 border-slate-800"
+                                />
+                                <div>
+                                  <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">
+                                    {isHindi ? "साँस लेने वाले जुमले (Natural Fillers)" : "Natural Fillers"}
+                                  </span>
+                                  <p className="text-[9px] text-slate-400 mt-0.5">
+                                    {isHindi 
+                                      ? "वाक्यों के शुरू में 'अच्छा भाई', 'लीजिए' जैसे स्वाभाविक कारपेंटर शब्द जोड़ता है।" 
+                                      : "Appends warm carpenter supervisor fillers like 'Ok brother', 'Alright now' randomly."}
+                                  </p>
+                                </div>
+                              </label>
+
+                              {/* Filler probability slider */}
+                              {voiceConfig.enableNaturalBreathing && (
+                                <div className="pl-6 pt-1 border-t border-slate-800/20">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{isHindi ? "जुमले आने की संभावना" : "Filler Frequency"}</span>
+                                    <span className="text-[10px] font-mono font-bold text-amber-400">{Math.round(voiceConfig.customFillerProbability * 100)}%</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.1"
+                                    max="0.8"
+                                    step="0.05"
+                                    value={voiceConfig.customFillerProbability}
+                                    onChange={(e) => {
+                                      const next = { ...voiceConfig, customFillerProbability: parseFloat(e.target.value) };
+                                      setVoiceConfig(next);
+                                      saveVoiceConfig(next);
+                                    }}
+                                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Debug Mode toggle */}
+                              <label className="flex items-start gap-2.5 cursor-pointer group pt-2 mt-2 border-t border-slate-800/40">
+                                <input
+                                  type="checkbox"
+                                  checked={voiceConfig.debugMode}
+                                  onChange={(e) => {
+                                    const next = { ...voiceConfig, debugMode: e.target.checked };
+                                    setVoiceConfig(next);
+                                    saveVoiceConfig(next);
+                                  }}
+                                  className="rounded mt-0.5 text-amber-500 focus:ring-amber-500 bg-slate-950 border-slate-800"
+                                />
+                                <div>
+                                  <span className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors">
+                                    {isHindi ? "डीबग मोड (Console Log)" : "Debug Mode"}
+                                  </span>
+                                  <p className="text-[9px] text-slate-400 mt-0.5">
+                                    {isHindi 
+                                      ? "कंसोल में प्रोसोडी और फोनेटिक पैरामीटर्स को लॉग करता है।" 
+                                      : "Logs calculated prosody parameters and phonetic text to browser console."}
+                                  </p>
+                                </div>
+                              </label>
+                            </div>
+
+                            {/* Testing Station */}
+                            <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 flex-1 flex flex-col justify-between">
+                              <div>
+                                <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2">
+                                  {isHindi ? "3. ट्यूनिंग का लाइव परीक्षण" : "3. Live Voice Testing"}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={testText}
+                                  onChange={(e) => setTestText(e.target.value)}
+                                  className="w-full bg-slate-950 text-xs text-slate-100 border border-slate-800 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                                  placeholder={isHindi ? "टेस्ट करने के लिए वाक्य लिखें..." : "Type custom text to test..."}
+                                />
+                                
+                                {/* Quick Presets buttons */}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTestText(isHindi ? "फेंस को छह सौ मिलीमीटर पर सेट करें और सीधा पट्टी कट लगाएं।" : "Set the fence to 600 millimeters and make a straight rip cut.")}
+                                    className="text-[9px] bg-slate-800 hover:bg-slate-750 text-slate-300 font-semibold px-2 py-1 rounded"
+                                  >
+                                    {isHindi ? "मिस्री निर्देश" : "Carpenter instruction"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTestText(isHindi ? "नमस्ते, मैं सहिरा हूँ। आज हम मिलकर प्लाईवुड काटेंगे!" : "Hello, I am Sahira. Today we will cut plywood together!")}
+                                    className="text-[9px] bg-slate-800 hover:bg-slate-750 text-slate-300 font-semibold px-2 py-1 rounded"
+                                  >
+                                    {isHindi ? "प्यारा अभिवादन" : "Friendly greeting"}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 mt-4 pt-3 border-t border-slate-800/60">
+                                <button
+                                  type="button"
+                                  onClick={() => playSahiraAudio(testText)}
+                                  className="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black py-2.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-900/10 transition-colors"
+                                >
+                                  <Volume2 size={14} />
+                                  {isHindi ? "आवाज़ का परीक्षण करें 🔊" : "Test Current Voice 🔊"}
+                                </button>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => setShowTuningLab(false)}
+                                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+                                >
+                                  {isHindi ? "बंद करें" : "Close Lab"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Active Instruction Terminal Screen */}
+                    {activeStep && (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-950/70 rounded-2xl p-5 border border-slate-800 shadow-inner mb-6">
+                        {/* Terminal Right Column: Large Instruction Text */}
+                        <div className="lg:col-span-8 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-[10px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-0.5 rounded-full">
+                                {isHindi ? `स्टेप ${activeStep.stepId} of ${sahiraSteps.length}` : `Step ${activeStep.stepId} of ${sahiraSteps.length}`}
+                              </span>
+                              <span className="text-[10px] font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
+                                {activeStep.localName}
+                              </span>
+                            </div>
+
+                            <p className="text-lg md:text-xl font-black text-white leading-relaxed tracking-tight py-2 border-b border-slate-800/50 mb-3">
+                              {activeStep.advice}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-2">
+                            {isListening && (
+                              <p className="bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/50 flex items-center gap-1.5 text-[11px] font-semibold text-slate-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block animate-ping"></span>
+                                {isHindi 
+                                  ? "बोले: 'अगला' (आगे बढ़ने के लिए), 'पीछे' (पहले स्टेप के लिए), या 'फिर से' (दोहराने के लिए)"
+                                  : "Speak: 'Next' (forward), 'Back' (backward), or 'Repeat' (repeat speech)"}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Terminal Left Column: Ruler Fence Setting HUD */}
+                        <div className="lg:col-span-4 flex flex-col justify-between bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-lg">
+                          <div>
+                            <p className="text-[10px] font-black tracking-widest uppercase text-slate-400 flex items-center gap-1 mb-1">
+                              <Sliders size={11} className="text-amber-500" />
+                              {isHindi ? "सॉ-फेंस माप सेटिंग" : "Saw-Fence Setting"}
+                            </p>
+                            
+                            {/* Saw Fence Digital Gauge */}
+                            <div className="bg-amber-500 text-slate-950 font-black p-3.5 rounded-lg flex flex-col items-center justify-center shadow-lg border border-amber-400 select-none">
+                              <span className="text-[9px] uppercase tracking-wider font-extrabold opacity-70">
+                                {isHindi ? "फेंस दूरी" : "FENCE DISTANCE"}
+                              </span>
+                              <span className="text-3xl font-mono font-black mt-0.5 tracking-tight">
+                                {convertMmToUnit(activeStep.fenceSetting, settings.unit).toFixed(1)}
+                              </span>
+                              <span className="text-[10px] font-extrabold mt-0.5 opacity-80 uppercase tracking-widest">
+                                {settings.unit}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Affected Parts Indicator */}
+                          {activeStep.affectedPartIds.length > 0 && (
+                            <div className="mt-4 border-t border-slate-800/60 pt-3">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                {isHindi ? "संबंधित पुर्जे:" : "Produced Parts:"}
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {activeStep.affectedPartIds.map(pId => {
+                                  const prt = layout.parts.find(p => p.id === pId);
+                                  if (!prt) return null;
+                                  return (
+                                    <span key={pId} className="inline-flex items-center gap-1.5 text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-1 rounded-md border border-slate-700/60 shadow-sm">
+                                      <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: getPartColor(prt.name, 0) }} />
+                                      {prt.name}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step Navigation Controls */}
+                    <div className="flex items-center justify-between gap-3 bg-slate-950/40 p-3 rounded-2xl border border-slate-800 mb-6">
+                      <button
+                        type="button"
+                        disabled={activeStepIdx === 0}
+                        onClick={() => {
+                          const nextIdx = activeStepIdx - 1;
+                          setActiveStepIndices(prev => ({ ...prev, [layout.sheetIndex]: nextIdx }));
+                          speakInstruction(sahiraSteps[nextIdx].advice);
+                        }}
+                        className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-300 px-4 py-2.5 rounded-xl text-xs font-black cursor-pointer transition-all border border-slate-700/80 disabled:cursor-not-allowed select-none"
+                      >
+                        <ChevronLeft size={16} />
+                        {isHindi ? "पीछे (Back)" : "Previous"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => speakInstruction(activeStep.advice)}
+                        className={`flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-xs font-black cursor-pointer transition-all shadow-md shadow-indigo-900/20 select-none ${isCurrentlySpeaking ? 'ring-2 ring-indigo-400' : ''}`}
+                      >
+                        {isCurrentlySpeaking ? <Pause size={14} className="animate-pulse" /> : <Play size={14} />}
+                        {isHindi ? "पुनः सुनो (Repeat)" : "Speak"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={activeStepIdx === sahiraSteps.length - 1}
+                        onClick={() => {
+                          const nextIdx = activeStepIdx + 1;
+                          setActiveStepIndices(prev => ({ ...prev, [layout.sheetIndex]: nextIdx }));
+                          speakInstruction(sahiraSteps[nextIdx].advice);
+                        }}
+                        className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-300 px-4 py-2.5 rounded-xl text-xs font-black cursor-pointer transition-all border border-slate-700/80 disabled:cursor-not-allowed select-none"
+                      >
+                        {isHindi ? "आगे (Next)" : "Next"}
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+
+                    {/* All Steps Table Stepper List */}
+                    <div>
+                      <h5 className="font-extrabold text-[10px] text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                        {isHindi ? "सम्पूर्ण कटिंग अनुक्रम सूची (Complete Step Sequence)" : "Full Cutting Sequence Stepper"}
+                      </h5>
+                      <div className="max-h-60 overflow-y-auto divide-y divide-slate-800/50 rounded-xl border border-slate-800 bg-slate-950/20 shadow-inner pr-1.5">
+                        {sahiraSteps.map((step, idx) => {
+                          const isCurrent = idx === activeStepIdx;
+                          return (
+                            <div
+                              key={step.stepId}
+                              onClick={() => {
+                                setActiveStepIndices(prev => ({ ...prev, [layout.sheetIndex]: idx }));
+                                speakInstruction(step.advice);
+                              }}
+                              className={`flex items-start gap-3 p-3 transition-colors cursor-pointer select-none ${
+                                isCurrent 
+                                  ? 'bg-indigo-950/30 border-l-4 border-indigo-500 text-white' 
+                                  : 'hover:bg-slate-800/30 text-slate-400 border-l-4 border-transparent'
+                              }`}
+                            >
+                              <div className={`w-6 h-6 rounded-lg font-mono font-black text-xs flex items-center justify-center shrink-0 mt-0.5 ${
+                                isCurrent 
+                                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30' 
+                                  : 'bg-slate-800 text-slate-500'
+                              }`}>
+                                {step.stepId}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <span className={`text-[10px] font-black uppercase tracking-wider ${isCurrent ? 'text-indigo-400' : 'text-slate-500'}`}>
+                                    {step.localName}
+                                  </span>
+                                  <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                    isCurrent ? 'bg-amber-500/15 text-amber-400 border border-amber-500/10' : 'bg-slate-800 text-slate-400'
+                                  }`}>
+                                    {isHindi ? "फेंस दूरी" : "FENCE"}: {convertMmToUnit(step.fenceSetting, settings.unit).toFixed(1)} {settings.unit}
+                                  </span>
+                                </div>
+                                <p className={`text-xs ${isCurrent ? 'font-bold text-slate-100' : 'font-medium text-slate-400'}`}>
+                                  {step.advice}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

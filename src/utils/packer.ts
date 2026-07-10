@@ -143,94 +143,182 @@ export function runPacking(
   partsInput: PartInput[],
   settings: SheetSettings
 ): PackingResult {
-  // If there are no multi-materials or stockItems defined, just use the single runner
-  if (!settings.stockItems || settings.stockItems.length === 0) {
-    return runPackingSingleMaterial(partsInput, settings);
-  }
+  const lockedLayouts = (settings.lockedLayouts || []).filter(l => l.isLocked);
+  const lockedPartIds = new Set(lockedLayouts.flatMap(l => l.parts.map(p => p.id)));
 
-  // Otherwise, group parts by material (resolving recipe to base board material ID)
-  const materialGroups = new Map<string | undefined, PartInput[]>();
-  for (const part of partsInput) {
-    let matId = part.materialId;
-    const recipe = settings.recipes?.find(r => r.id === matId);
-    if (recipe) {
-      matId = recipe.baseMaterialId;
+  // Subtract locked quantities from partsInput
+  const remainingPartsInput: PartInput[] = partsInput.map(part => {
+    let lockedQty = 0;
+    for (let q = 0; q < part.quantity; q++) {
+      if (lockedPartIds.has(`${part.id}_${q}`)) {
+        lockedQty++;
+      }
     }
-    if (!materialGroups.has(matId)) {
-      materialGroups.set(matId, []);
-    }
-    materialGroups.get(matId)!.push(part);
-  }
+    return {
+      ...part,
+      quantity: Math.max(0, part.quantity - lockedQty)
+    };
+  }).filter(p => p.quantity > 0);
 
-  const finalResult: PackingResult = {
-    layouts: [],
-    totalSheetsUsed: 0,
-    totalUtilization: 0,
-    overallWastePercent: 0,
-    totalPartsArea: 0,
-    totalBandingLength: 0,
-    unplacedParts: []
+  // Helper to run packing on remaining parts
+  const runRemainingPacking = () => {
+    if (!settings.stockItems || settings.stockItems.length === 0) {
+      return runPackingSingleMaterial(remainingPartsInput, settings);
+    }
+
+    // Otherwise, group parts by material (resolving recipe to base board material ID)
+    const materialGroups = new Map<string | undefined, PartInput[]>();
+    for (const part of remainingPartsInput) {
+      let matId = part.materialId;
+      const recipe = settings.recipes?.find(r => r.id === matId);
+      if (recipe) {
+        matId = recipe.baseMaterialId;
+      }
+      if (!materialGroups.has(matId)) {
+        materialGroups.set(matId, []);
+      }
+      materialGroups.get(matId)!.push(part);
+    }
+
+    const finalResult: PackingResult = {
+      layouts: [],
+      totalSheetsUsed: 0,
+      totalUtilization: 0,
+      overallWastePercent: 0,
+      totalPartsArea: 0,
+      totalBandingLength: 0,
+      unplacedParts: []
+    };
+
+    let globalSheetIndex = 1;
+    let totalAreaUsedByAll = 0;
+    let totalAreaAvailableByAll = 0;
+
+    for (const [matId, groupParts] of materialGroups.entries()) {
+      let overrideL: number | undefined;
+      let overrideW: number | undefined;
+      let materialName: string | undefined;
+      let stockQtyOverride: number | undefined;
+
+      if (matId) {
+        const stockItem = settings.stockItems.find(s => s.id === matId);
+        if (stockItem) {
+          overrideL = stockItem.length;
+          overrideW = stockItem.width;
+          materialName = stockItem.name;
+          stockQtyOverride = stockItem.quantity;
+        }
+      }
+
+      const groupResult = runPackingSingleMaterial(
+        groupParts,
+        settings,
+        overrideL,
+        overrideW,
+        materialName,
+        stockQtyOverride
+      );
+
+      // Merge group results into final result
+      for (const layout of groupResult.layouts) {
+        layout.sheetIndex = globalSheetIndex++;
+        finalResult.layouts.push(layout);
+        
+        totalAreaUsedByAll += layout.usedArea;
+        totalAreaAvailableByAll += layout.totalArea;
+      }
+
+      finalResult.totalSheetsUsed += groupResult.totalSheetsUsed;
+      finalResult.totalPartsArea += groupResult.totalPartsArea;
+      finalResult.totalBandingLength += groupResult.totalBandingLength;
+      
+      // Merge unplaced
+      for (const u of groupResult.unplacedParts) {
+        const existing = finalResult.unplacedParts.find(e => e.name === u.name);
+        if (existing) {
+          existing.qty += u.qty;
+        } else {
+          finalResult.unplacedParts.push({ ...u });
+        }
+      }
+    }
+
+    if (totalAreaAvailableByAll > 0) {
+      finalResult.totalUtilization = (totalAreaUsedByAll / totalAreaAvailableByAll) * 100;
+      finalResult.overallWastePercent = 100 - finalResult.totalUtilization;
+    }
+
+    return finalResult;
   };
 
-  let globalSheetIndex = 1;
-  let totalAreaUsedByAll = 0;
-  let totalAreaAvailableByAll = 0;
+  const remainingResult = runRemainingPacking();
 
-  for (const [matId, groupParts] of materialGroups.entries()) {
-    let overrideL: number | undefined;
-    let overrideW: number | undefined;
-    let materialName: string | undefined;
-    let stockQtyOverride: number | undefined;
+  // Combine locked layouts and new layouts
+  const combinedLayouts = [...lockedLayouts, ...remainingResult.layouts];
 
-    if (matId) {
-      const stockItem = settings.stockItems.find(s => s.id === matId);
-      if (stockItem) {
-        overrideL = stockItem.length;
-        overrideW = stockItem.width;
-        materialName = stockItem.name;
-        stockQtyOverride = stockItem.quantity;
-      }
+  // Re-assign sheetIndex sequentially
+  let globalIndex = 1;
+  for (const l of combinedLayouts) {
+    l.sheetIndex = globalIndex++;
+  }
+
+  // Count seen instances to avoid ID collisions on remaining parts
+  const lockedCounts = new Map<string, number>();
+  for (const layout of lockedLayouts) {
+    for (const part of layout.parts) {
+      const baseId = part.id.split('_')[0];
+      lockedCounts.set(baseId, (lockedCounts.get(baseId) || 0) + 1);
     }
+  }
 
-    const groupResult = runPackingSingleMaterial(
-      groupParts,
-      settings,
-      overrideL,
-      overrideW,
-      materialName,
-      stockQtyOverride
-    );
+  const seenCounts = new Map<string, number>();
+  for (const layout of remainingResult.layouts) {
+    for (const part of layout.parts) {
+      const baseId = part.id.split('_')[0];
+      const lockedCount = lockedCounts.get(baseId) || 0;
+      const currentSeen = seenCounts.get(baseId) || 0;
+      part.id = `${baseId}_${lockedCount + currentSeen}`;
+      seenCounts.set(baseId, currentSeen + 1);
+    }
+  }
 
-    // Merge group results into final result
-    for (const layout of groupResult.layouts) {
-      layout.sheetIndex = globalSheetIndex++;
-      finalResult.layouts.push(layout);
+  // Calculate final statistics for the combined result
+  let totalPartsArea = 0;
+  let totalBandingLength = 0;
+  let totalUsedArea = 0;
+  let totalArea = 0;
+
+  for (const layout of combinedLayouts) {
+    totalUsedArea += layout.usedArea;
+    totalArea += layout.totalArea;
+    for (const p of layout.parts) {
+      totalPartsArea += p.origL * p.origW;
       
-      totalAreaUsedByAll += layout.usedArea;
-      totalAreaAvailableByAll += layout.totalArea;
-    }
-
-    finalResult.totalSheetsUsed += groupResult.totalSheetsUsed;
-    finalResult.totalPartsArea += groupResult.totalPartsArea;
-    finalResult.totalBandingLength += groupResult.totalBandingLength;
-    
-    // Merge unplaced
-    for (const u of groupResult.unplacedParts) {
-      const existing = finalResult.unplacedParts.find(e => e.name === u.name);
-      if (existing) {
-        existing.qty += u.qty;
-      } else {
-        finalResult.unplacedParts.push({ ...u });
-      }
+      // Banding calculation
+      const hasT = p.edges.T;
+      const hasB = p.edges.B;
+      const hasL = p.edges.L;
+      const hasR = p.edges.R;
+      if (hasT) totalBandingLength += p.origW;
+      if (hasB) totalBandingLength += p.origW;
+      if (hasL) totalBandingLength += p.origL;
+      if (hasR) totalBandingLength += p.origL;
     }
   }
 
-  if (totalAreaAvailableByAll > 0) {
-    finalResult.totalUtilization = (totalAreaUsedByAll / totalAreaAvailableByAll) * 100;
-    finalResult.overallWastePercent = 100 - finalResult.totalUtilization;
-  }
+  const totalSheetsUsed = combinedLayouts.length;
+  const totalUtilization = totalArea > 0 ? (totalUsedArea / totalArea) * 100 : 0;
+  const overallWastePercent = 100 - totalUtilization;
 
-  return finalResult;
+  return {
+    layouts: combinedLayouts,
+    totalSheetsUsed,
+    totalUtilization: Math.max(0, Math.min(100, totalUtilization)),
+    overallWastePercent: Math.max(0, Math.min(100, overallWastePercent)),
+    totalPartsArea,
+    totalBandingLength,
+    unplacedParts: remainingResult.unplacedParts
+  };
 }
 
 export function runPackingSingleMaterial(
@@ -395,683 +483,14 @@ export function runPackingSingleMaterial(
   for (let sIdx = 0; sIdx < totalStockSheets; sIdx++) {
     if (remainingParts.length === 0) break;
 
-    const packedOnThisSheet: PackedPart[] = [];
-    let freeRects: FreeRect[] = [{ x: 0, y: 0, w: binW, h: binH }];
-
-    const stillToPack: PartToPack[] = [];
-
-    if (currentAlgorithm === 'StripCutRowFirst') {
-      // --- STRIP-CUT ROW-FIRST (CONTINUOUS HORIZONTAL RIP) ---
-      const sheetParts = [...remainingParts];
-      // Sort primarily by height (cutW) descending to group similar heights and minimize vertical waste
-      sheetParts.sort((a, b) => b.cutW - a.cutW);
-
-      interface RowShelf {
-        y: number;
-        h: number;
-        usedW: number;
-        parts: PackedPart[];
-      }
-
-      const shelves: RowShelf[] = [];
-      let currentY = 0;
-      const unplacedThisSheet: PartToPack[] = [];
-
-      for (const part of sheetParts) {
-        // Get allowed orientations
-        const rectW = part.cutL + K;
-        const rectH = part.cutW + K;
-        const orientations: { w: number; h: number; rot: boolean }[] = [];
-        const strictlyRespect = settings.respectGrain !== false;
-
-        if (strictlyRespect && part.grain === 'L') {
-          orientations.push({ w: rectW, h: rectH, rot: false });
-        } else if (strictlyRespect && part.grain === 'W') {
-          orientations.push({ w: rectH, h: rectW, rot: true });
-        } else {
-          orientations.push({ w: rectW, h: rectH, rot: false });
-          if (!strictlyRespect || part.allowRot) {
-            orientations.push({ w: rectH, h: rectW, rot: true });
-          }
-        }
-
-        // 1. Try to fit in an existing shelf
-        let bestShelfIdx = -1;
-        let bestOrientation: typeof orientations[0] | null = null;
-        let bestShelfFitScore = -Infinity; // Higher is better
-
-        // Collect all currently placed parts on this sheet across all shelves
-        const currentlyPlaced: PackedPart[] = [];
-        for (const sh of shelves) {
-          currentlyPlaced.push(...sh.parts);
-        }
-
-        for (let s = 0; s < shelves.length; s++) {
-          const sh = shelves[s];
-          for (const opt of orientations) {
-            const leftoverW = binW - sh.usedW - opt.w;
-            if (leftoverW >= -0.01 && opt.h <= sh.h + 0.01) {
-              // Fits!
-              // Score = minimize height waste and leftover width + adjacency bonus
-              const heightWaste = sh.h - opt.h;
-              
-              // Only allow matching if the height difference is small, to ensure continuous straight rows
-              const maxAllowedHeightWaste = Math.min(25.0, sh.h * 0.15);
-              if (heightWaste > maxAllowedHeightWaste) {
-                continue;
-              }
-
-              const score = -(heightWaste * 1000 + leftoverW) + getAdjacencyScore(sh.usedW, sh.y, opt.w, opt.h, part, currentlyPlaced);
-              if (score > bestShelfFitScore) {
-                bestShelfFitScore = score;
-                bestShelfIdx = s;
-                bestOrientation = opt;
-              }
-            }
-          }
-        }
-
-        if (bestShelfIdx !== -1 && bestOrientation) {
-          const sh = shelves[bestShelfIdx];
-          const posX = sh.usedW;
-          const posY = sh.y;
-
-          sh.parts.push({
-            id: part.id,
-            name: part.name,
-            x: posX,
-            y: posY,
-            w: bestOrientation.w,
-            h: bestOrientation.h,
-            origL: part.origL,
-            origW: part.origW,
-            cutL: part.cutL,
-            cutW: part.cutW,
-            isRotated: bestOrientation.rot,
-            edges: part.edges,
-            grain: part.grain,
-            drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
-          });
-
-          sh.usedW += bestOrientation.w;
-
-          // Clean up unplaced tracking
-          const entry = unplacedPartsMap.get(part.name);
-          if (entry) {
-            entry.qty -= 1;
-            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-          }
-        } else {
-          // 2. Try to open a new shelf
-          let bestNewOpt: typeof orientations[0] | null = null;
-          let minNewShelfHeight = Infinity;
-
-          for (const opt of orientations) {
-            if (opt.w <= binW + 0.01 && currentY + opt.h <= binH + 0.01) {
-              if (opt.h < minNewShelfHeight) {
-                minNewShelfHeight = opt.h;
-                bestNewOpt = opt;
-              }
-            }
-          }
-
-          if (bestNewOpt) {
-            const shY = currentY;
-            const shH = bestNewOpt.h;
-
-            const newShelf: RowShelf = {
-              y: shY,
-              h: shH,
-              usedW: bestNewOpt.w,
-              parts: [{
-                id: part.id,
-                name: part.name,
-                x: 0,
-                y: shY,
-                w: bestNewOpt.w,
-                h: bestNewOpt.h,
-                origL: part.origL,
-                origW: part.origW,
-                cutL: part.cutL,
-                cutW: part.cutW,
-                isRotated: bestNewOpt.rot,
-                edges: part.edges,
-                grain: part.grain,
-                drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
-              }]
-            };
-
-            shelves.push(newShelf);
-            currentY += shH;
-
-            // Clean up unplaced tracking
-            const entry = unplacedPartsMap.get(part.name);
-            if (entry) {
-              entry.qty -= 1;
-              if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-            }
-          } else {
-            // Defer to next sheet
-            unplacedThisSheet.push(part);
-          }
-        }
-      }
-
-      // Collect all placed parts
-      for (const sh of shelves) {
-        packedOnThisSheet.push(...sh.parts);
-      }
-
-      if (packedOnThisSheet.length === 0) {
-        break;
-      }
-
-      let sheetUsedArea = 0;
-      for (const p of packedOnThisSheet) {
-        sheetUsedArea += p.w * p.h;
-      }
-      const totalArea = binW * binH;
-      const wastePercent = ((totalArea - sheetUsedArea) / totalArea) * 100;
-
-      layouts.push({
-        sheetIndex: sIdx + 1,
-        width: binW,
-        height: binH,
-        parts: packedOnThisSheet,
-        usedArea: sheetUsedArea,
-        totalArea,
-        wastePercent: Math.max(0, wastePercent),
-        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet),
-        materialName: materialNameOverride
-      });
-
-      remainingParts = unplacedThisSheet;
-      continue;
-    }
-
-    if (currentAlgorithm === 'StripCutColFirst') {
-      // --- STRIP-CUT COLUMN-FIRST (CONTINUOUS VERTICAL RIP) ---
-      const sheetParts = [...remainingParts];
-      // Sort primarily by length (cutL) descending to group similar lengths and define column widths
-      sheetParts.sort((a, b) => b.cutL - a.cutL);
-
-      interface ColShelf {
-        x: number;
-        w: number;
-        usedH: number;
-        parts: PackedPart[];
-      }
-
-      const columns: ColShelf[] = [];
-      let currentX = 0;
-      const unplacedThisSheet: PartToPack[] = [];
-
-      for (const part of sheetParts) {
-        const rectW = part.cutL + K;
-        const rectH = part.cutW + K;
-        const orientations: { w: number; h: number; rot: boolean }[] = [];
-        const strictlyRespect = settings.respectGrain !== false;
-
-        if (strictlyRespect && part.grain === 'L') {
-          orientations.push({ w: rectW, h: rectH, rot: false });
-        } else if (strictlyRespect && part.grain === 'W') {
-          orientations.push({ w: rectH, h: rectW, rot: true });
-        } else {
-          orientations.push({ w: rectW, h: rectH, rot: false });
-          if (!strictlyRespect || part.allowRot) {
-            orientations.push({ w: rectH, h: rectW, rot: true });
-          }
-        }
-
-        // 1. Try to fit in an existing column
-        let bestColIdx = -1;
-        let bestOrientation: typeof orientations[0] | null = null;
-        let bestColFitScore = -Infinity;
-
-        // Collect all currently placed parts on this sheet across all columns
-        const currentlyPlaced: PackedPart[] = [];
-        for (const col of columns) {
-          currentlyPlaced.push(...col.parts);
-        }
-
-        for (let c = 0; c < columns.length; c++) {
-          const col = columns[c];
-          for (const opt of orientations) {
-            const leftoverH = binH - col.usedH - opt.h;
-            if (leftoverH >= -0.01 && opt.w <= col.w + 0.01) {
-              // Fits!
-              // Score = minimize width waste and leftover height + adjacency bonus
-              const widthWaste = col.w - opt.w;
-
-              // Only allow matching if the width difference is small, to ensure continuous straight columns
-              const maxAllowedWidthWaste = Math.min(25.0, col.w * 0.15);
-              if (widthWaste > maxAllowedWidthWaste) {
-                continue;
-              }
-
-              const score = -(widthWaste * 1000 + leftoverH) + getAdjacencyScore(col.x, col.usedH, opt.w, opt.h, part, currentlyPlaced);
-              if (score > bestColFitScore) {
-                bestColFitScore = score;
-                bestColIdx = c;
-                bestOrientation = opt;
-              }
-            }
-          }
-        }
-
-        if (bestColIdx !== -1 && bestOrientation) {
-          const col = columns[bestColIdx];
-          const posX = col.x;
-          const posY = col.usedH;
-
-          col.parts.push({
-            id: part.id,
-            name: part.name,
-            x: posX,
-            y: posY,
-            w: bestOrientation.w,
-            h: bestOrientation.h,
-            origL: part.origL,
-            origW: part.origW,
-            cutL: part.cutL,
-            cutW: part.cutW,
-            isRotated: bestOrientation.rot,
-            edges: part.edges,
-            grain: part.grain,
-            drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
-          });
-
-          col.usedH += bestOrientation.h;
-
-          // Clean up unplaced tracking
-          const entry = unplacedPartsMap.get(part.name);
-          if (entry) {
-            entry.qty -= 1;
-            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-          }
-        } else {
-          // 2. Try to open a new column
-          let bestNewOpt: typeof orientations[0] | null = null;
-          let minNewColWidth = Infinity;
-
-          for (const opt of orientations) {
-            if (opt.h <= binH + 0.01 && currentX + opt.w <= binW + 0.01) {
-              if (opt.w < minNewColWidth) {
-                minNewColWidth = opt.w;
-                bestNewOpt = opt;
-              }
-            }
-          }
-
-          if (bestNewOpt) {
-            const colX = currentX;
-            const colW = bestNewOpt.w;
-
-            const newCol: ColShelf = {
-              x: colX,
-              w: colW,
-              usedH: bestNewOpt.h,
-              parts: [{
-                id: part.id,
-                name: part.name,
-                x: colX,
-                y: 0,
-                w: bestNewOpt.w,
-                h: bestNewOpt.h,
-                origL: part.origL,
-                origW: part.origW,
-                cutL: part.cutL,
-                cutW: part.cutW,
-                isRotated: bestNewOpt.rot,
-                edges: part.edges,
-                grain: part.grain,
-                drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
-              }]
-            };
-
-            columns.push(newCol);
-            currentX += colW;
-
-            // Clean up unplaced tracking
-            const entry = unplacedPartsMap.get(part.name);
-            if (entry) {
-              entry.qty -= 1;
-              if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-            }
-          } else {
-            // Defer to next sheet
-            unplacedThisSheet.push(part);
-          }
-        }
-      }
-
-      // Collect all placed parts
-      for (const col of columns) {
-        packedOnThisSheet.push(...col.parts);
-      }
-
-      if (packedOnThisSheet.length === 0) {
-        break;
-      }
-
-      let sheetUsedArea = 0;
-      for (const p of packedOnThisSheet) {
-        sheetUsedArea += p.w * p.h;
-      }
-      const totalArea = binW * binH;
-      const wastePercent = ((totalArea - sheetUsedArea) / totalArea) * 100;
-
-      layouts.push({
-        sheetIndex: sIdx + 1,
-        width: binW,
-        height: binH,
-        parts: packedOnThisSheet,
-        usedArea: sheetUsedArea,
-        totalArea,
-        wastePercent: Math.max(0, wastePercent),
-        wasteRects: computeWasteRects(binW, binH, packedOnThisSheet),
-        materialName: materialNameOverride
-      });
-
-      remainingParts = unplacedThisSheet;
-      continue;
-    }
-
-    for (const part of remainingParts) {
-      let bestRectIndex = -1;
-      let bestShortSideFit = Infinity;
-      let bestIsRotated = false;
-      let finalW = 0;
-      let finalH = 0;
-
-      // Determine dimensions including blade thickness (Kerf)
-      const rectW = part.cutL + K;
-      const rectH = part.cutW + K;
-
-      // Orientation constraints:
-      const orientations: { w: number; h: number; rot: boolean }[] = [];
-      const strictlyRespect = settings.respectGrain !== false;
-
-      if (strictlyRespect && part.grain === 'L') {
-        orientations.push({ w: rectW, h: rectH, rot: false });
-      } else if (strictlyRespect && part.grain === 'W') {
-        orientations.push({ w: rectH, h: rectW, rot: true }); // rotate 90 degrees to align grain widthwise
-      } else {
-        // No grain or not strictly respecting grain
-        orientations.push({ w: rectW, h: rectH, rot: false });
-        if (!strictlyRespect || part.allowRot) {
-          orientations.push({ w: rectH, h: rectW, rot: true });
-        }
-      }
-
-      // Check all orientations and free rects to find best fit
-      if (currentAlgorithm.startsWith('Guillotine')) {
-        // --- GUILLOTINE PACKING (BSSF Heuristic) ---
-        let bestScore = Infinity; // We want to minimize the score (shortSideFit - bonuses)
-        const qtyLeft = unplacedPartsMap.get(part.name)?.qty || 1;
-        for (let r = 0; r < freeRects.length; r++) {
-          const f = freeRects[r];
-          for (const opt of orientations) {
-            if (opt.w <= f.w && opt.h <= f.h) {
-              const leftoverW = f.w - opt.w;
-              const leftoverH = f.h - opt.h;
-              const shortSideFit = Math.min(leftoverW, leftoverH);
-              
-              const spaciousness = getSpaciousnessScore(f.w, f.h, opt.w, opt.h, qtyLeft, K);
-              const adjacency = getAdjacencyScore(f.x, f.y, opt.w, opt.h, part, packedOnThisSheet);
-              
-              // Snug-fit priority bonus: prioritize filling small existing gaps and channels
-              const isSnugW = leftoverW < 12.0;
-              const isSnugH = leftoverH < 12.0;
-              let snugBonus = 0;
-              if (isSnugW && isSnugH) snugBonus += 100000;
-              else if (isSnugW || isSnugH) snugBonus += 40000;
-
-              // Rotation preference: only rotate if it is significantly better to fit snug, otherwise maintain non-rotated state
-              const rotationPenalty = opt.rot ? 50 : 0;
-
-              const score = shortSideFit - spaciousness - adjacency - snugBonus + rotationPenalty;
-
-              if (score < bestScore) {
-                bestScore = score;
-                bestRectIndex = r;
-                bestIsRotated = opt.rot;
-                finalW = opt.w;
-                finalH = opt.h;
-              }
-            }
-          }
-        }
-
-        if (bestRectIndex !== -1) {
-          const f = freeRects[bestRectIndex];
-          // Place rectangle at the bottom-left of the free space
-          const posX = f.x;
-          const posY = f.y;
-
-          packedOnThisSheet.push({
-            id: part.id,
-            name: part.name,
-            x: posX,
-            y: posY,
-            w: finalW,
-            h: finalH,
-            origL: part.origL,
-            origW: part.origW,
-            cutL: part.cutL,
-            cutW: part.cutW,
-            isRotated: bestIsRotated,
-            edges: part.edges,
-            grain: part.grain,
-            drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
-          });
-
-          // Split the free rect using SAS (Short Side Split)
-          const leftoverW = f.w - finalW;
-          const leftoverH = f.h - finalH;
-
-          // Remove the placed free rect
-          freeRects.splice(bestRectIndex, 1);
-
-          const isBssfSas = currentAlgorithm === 'GuillotineBssfSas';
-
-          // Split heuristic:
-          // BssfSas splits along the shorter side of the placed part.
-          // BssfMaxas splits along the longer side.
-          const doHorizontalSplit = isBssfSas
-            ? leftoverW < leftoverH
-            : leftoverW >= leftoverH;
-
-          if (doHorizontalSplit) {
-            // Horizontal split
-            if (leftoverW > 0.01) {
-              freeRects.push({
-                x: f.x + finalW,
-                y: f.y,
-                w: leftoverW,
-                h: finalH,
-              });
-            }
-            if (leftoverH > 0.01) {
-              freeRects.push({
-                x: f.x,
-                y: f.y + finalH,
-                w: f.w,
-                h: leftoverH,
-              });
-            }
-          } else {
-            // Vertical split
-            if (leftoverW > 0.01) {
-              freeRects.push({
-                x: f.x + finalW,
-                y: f.y,
-                w: leftoverW,
-                h: f.h,
-              });
-            }
-            if (leftoverH > 0.01) {
-              freeRects.push({
-                x: f.x,
-                y: f.y + finalH,
-                w: finalW,
-                h: leftoverH,
-              });
-            }
-          }
-
-          // Clean up unplaced tracking
-          const entry = unplacedPartsMap.get(part.name);
-          if (entry) {
-            entry.qty -= 1;
-            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-          }
-        } else {
-          stillToPack.push(part);
-        }
-      } else {
-        // --- MAXRECTS PACKING (Best Short Side Fit) ---
-        let bestScore = Infinity; // We want to minimize the score (shortSideFit - bonuses)
-        const qtyLeft = unplacedPartsMap.get(part.name)?.qty || 1;
-        for (let r = 0; r < freeRects.length; r++) {
-          const f = freeRects[r];
-          for (const opt of orientations) {
-            if (opt.w <= f.w && opt.h <= f.h) {
-              const leftoverW = f.w - opt.w;
-              const leftoverH = f.h - opt.h;
-              const shortSideFit = Math.min(leftoverW, leftoverH);
-              
-              const spaciousness = getSpaciousnessScore(f.w, f.h, opt.w, opt.h, qtyLeft, K);
-              const adjacency = getAdjacencyScore(f.x, f.y, opt.w, opt.h, part, packedOnThisSheet);
-              
-              // Snug-fit priority bonus: prioritize filling small existing gaps and channels
-              const isSnugW = leftoverW < 12.0;
-              const isSnugH = leftoverH < 12.0;
-              let snugBonus = 0;
-              if (isSnugW && isSnugH) snugBonus += 100000;
-              else if (isSnugW || isSnugH) snugBonus += 40000;
-
-              // Rotation preference: only rotate if it is significantly better to fit snug, otherwise maintain non-rotated state
-              const rotationPenalty = opt.rot ? 50 : 0;
-
-              const score = shortSideFit - spaciousness - adjacency - snugBonus + rotationPenalty;
-
-              if (score < bestScore) {
-                bestScore = score;
-                bestRectIndex = r;
-                bestIsRotated = opt.rot;
-                finalW = opt.w;
-                finalH = opt.h;
-              }
-            }
-          }
-        }
-
-        if (bestRectIndex !== -1) {
-          const f = freeRects[bestRectIndex];
-          const posX = f.x;
-          const posY = f.y;
-
-          packedOnThisSheet.push({
-            id: part.id,
-            name: part.name,
-            x: posX,
-            y: posY,
-            w: finalW,
-            h: finalH,
-            origL: part.origL,
-            origW: part.origW,
-            cutL: part.cutL,
-            cutW: part.cutW,
-            isRotated: bestIsRotated,
-            edges: part.edges,
-            grain: part.grain,
-            drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
-          });
-
-          // Update free rects: split any overlapping free rects with the newly placed part
-          const newFreeRects: FreeRect[] = [];
-          for (const freeR of freeRects) {
-            if (
-              posX < freeR.x + freeR.w &&
-              posX + finalW > freeR.x &&
-              posY < freeR.y + freeR.h &&
-              posY + finalH > freeR.y
-            ) {
-              // Overlap exists! Split freeR into up to 4 subdivisions
-              if (posX > freeR.x) {
-                newFreeRects.push({
-                  x: freeR.x,
-                  y: freeR.y,
-                  w: posX - freeR.x,
-                  h: freeR.h,
-                });
-              }
-              if (posX + finalW < freeR.x + freeR.w) {
-                newFreeRects.push({
-                  x: posX + finalW,
-                  y: freeR.y,
-                  w: freeR.x + freeR.w - (posX + finalW),
-                  h: freeR.h,
-                });
-              }
-              if (posY > freeR.y) {
-                newFreeRects.push({
-                  x: freeR.x,
-                  y: freeR.y,
-                  w: freeR.w,
-                  h: posY - freeR.y,
-                });
-              }
-              if (posY + finalH < freeR.y + freeR.h) {
-                newFreeRects.push({
-                  x: freeR.x,
-                  y: posY + finalH,
-                  w: freeR.w,
-                  h: freeR.y + freeR.h - (posY + finalH),
-                });
-              }
-            } else {
-              // No overlap, keep as is
-              newFreeRects.push(freeR);
-            }
-          }
-
-          // Clean up free rects by removing any that are completely contained within other free rects
-          freeRects = [];
-          for (let i = 0; i < newFreeRects.length; i++) {
-            let isContained = false;
-            for (let j = 0; j < newFreeRects.length; j++) {
-              if (i === j) continue;
-              const rA = newFreeRects[i];
-              const rB = newFreeRects[j];
-              // Check if rA is inside rB
-              if (
-                rA.x >= rB.x &&
-                rA.y >= rB.y &&
-                rA.x + rA.w <= rB.x + rB.w &&
-                rA.y + rA.h <= rB.y + rB.h
-              ) {
-                isContained = true;
-                break;
-              }
-            }
-            if (!isContained) {
-              freeRects.push(newFreeRects[i]);
-            }
-          }
-
-          // Clean up unplaced tracking
-          const entry = unplacedPartsMap.get(part.name);
-          if (entry) {
-            entry.qty -= 1;
-            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
-          }
-        } else {
-          stillToPack.push(part);
-        }
-      }
-    }
+    const { packedOnThisSheet, stillToPack } = pack_one_sheet(
+      binW,
+      binH,
+      remainingParts,
+      currentAlgorithm,
+      settings,
+      unplacedPartsMap
+    );
 
     // Save this layout if parts were successfully placed
     if (packedOnThisSheet.length > 0) {
@@ -1317,4 +736,600 @@ export function computeWasteRects(
 
   // Filter out tiny pieces of waste (under 5mm) to reduce visualization noise
   return waste.filter(r => r.w >= 5 && r.h >= 5);
+}
+
+/**
+ * Modular "Main Factory" for packing one sheet.
+ * Takes a sheet with dimensions (binW, binH), parts list, algorithm setting,
+ * and tracks placed and remaining parts dynamically.
+ */
+export function pack_one_sheet(
+  binW: number,
+  binH: number,
+  remainingParts: PartToPack[],
+  currentAlgorithm: string,
+  settings: SheetSettings,
+  unplacedPartsMap: Map<string, { name: string; qty: number }>
+): { packedOnThisSheet: PackedPart[]; stillToPack: PartToPack[] } {
+  const packedOnThisSheet: PackedPart[] = [];
+  const stillToPack: PartToPack[] = [];
+  const K = settings.bladeTh; // Blade thickness (Kerf)
+
+  if (currentAlgorithm === 'StripCutRowFirst') {
+    // --- STRIP-CUT ROW-FIRST (CONTINUOUS HORIZONTAL RIP) ---
+    const sheetParts = [...remainingParts];
+    sheetParts.sort((a, b) => b.cutW - a.cutW);
+
+    interface RowShelf {
+      y: number;
+      h: number;
+      usedW: number;
+      parts: PackedPart[];
+    }
+
+    const shelves: RowShelf[] = [];
+    let currentY = 0;
+
+    for (const part of sheetParts) {
+      const rectW = part.cutL + K;
+      const rectH = part.cutW + K;
+      const orientations: { w: number; h: number; rot: boolean }[] = [];
+      const strictlyRespect = settings.respectGrain !== false;
+
+      if (strictlyRespect && part.grain === 'L') {
+        orientations.push({ w: rectW, h: rectH, rot: false });
+      } else if (strictlyRespect && part.grain === 'W') {
+        orientations.push({ w: rectH, h: rectW, rot: true });
+      } else {
+        orientations.push({ w: rectW, h: rectH, rot: false });
+        if (!strictlyRespect || part.allowRot) {
+          orientations.push({ w: rectH, h: rectW, rot: true });
+        }
+      }
+
+      let bestShelfIdx = -1;
+      let bestOrientation: typeof orientations[0] | null = null;
+      let bestShelfFitScore = -Infinity;
+
+      const currentlyPlaced: PackedPart[] = [];
+      for (const sh of shelves) {
+        currentlyPlaced.push(...sh.parts);
+      }
+
+      for (let s = 0; s < shelves.length; s++) {
+        const sh = shelves[s];
+        for (const opt of orientations) {
+          const leftoverW = binW - sh.usedW - opt.w;
+          if (leftoverW >= -0.01 && opt.h <= sh.h + 0.01) {
+            const heightWaste = sh.h - opt.h;
+            const maxAllowedHeightWaste = Math.min(25.0, sh.h * 0.15);
+            if (heightWaste > maxAllowedHeightWaste) {
+              continue;
+            }
+
+            const score = -(heightWaste * 1000 + leftoverW) + getAdjacencyScore(sh.usedW, sh.y, opt.w, opt.h, part, currentlyPlaced);
+            if (score > bestShelfFitScore) {
+              bestShelfFitScore = score;
+              bestShelfIdx = s;
+              bestOrientation = opt;
+            }
+          }
+        }
+      }
+
+      if (bestShelfIdx !== -1 && bestOrientation) {
+        const sh = shelves[bestShelfIdx];
+        const posX = sh.usedW;
+        const posY = sh.y;
+
+        sh.parts.push({
+          id: part.id,
+          name: part.name,
+          x: posX,
+          y: posY,
+          w: bestOrientation.w,
+          h: bestOrientation.h,
+          origL: part.origL,
+          origW: part.origW,
+          cutL: part.cutL,
+          cutW: part.cutW,
+          isRotated: bestOrientation.rot,
+          edges: part.edges,
+          grain: part.grain,
+          drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
+        });
+
+        sh.usedW += bestOrientation.w;
+
+        const entry = unplacedPartsMap.get(part.name);
+        if (entry) {
+          entry.qty -= 1;
+          if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+        }
+      } else {
+        let bestNewOpt: typeof orientations[0] | null = null;
+        let minNewShelfHeight = Infinity;
+
+        for (const opt of orientations) {
+          if (opt.w <= binW + 0.01 && currentY + opt.h <= binH + 0.01) {
+            if (opt.h < minNewShelfHeight) {
+              minNewShelfHeight = opt.h;
+              bestNewOpt = opt;
+            }
+          }
+        }
+
+        if (bestNewOpt) {
+          const shY = currentY;
+          const shH = bestNewOpt.h;
+
+          const newShelf: RowShelf = {
+            y: shY,
+            h: shH,
+            usedW: bestNewOpt.w,
+            parts: [{
+              id: part.id,
+              name: part.name,
+              x: 0,
+              y: shY,
+              w: bestNewOpt.w,
+              h: bestNewOpt.h,
+              origL: part.origL,
+              origW: part.origW,
+              cutL: part.cutL,
+              cutW: part.cutW,
+              isRotated: bestNewOpt.rot,
+              edges: part.edges,
+              grain: part.grain,
+              drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
+            }]
+          };
+
+          shelves.push(newShelf);
+          currentY += shH;
+
+          const entry = unplacedPartsMap.get(part.name);
+          if (entry) {
+            entry.qty -= 1;
+            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+          }
+        } else {
+          stillToPack.push(part);
+        }
+      }
+    }
+
+    for (const sh of shelves) {
+      packedOnThisSheet.push(...sh.parts);
+    }
+
+    return { packedOnThisSheet, stillToPack };
+  }
+
+  if (currentAlgorithm === 'StripCutColFirst') {
+    // --- STRIP-CUT COLUMN-FIRST (CONTINUOUS VERTICAL RIP) ---
+    const sheetParts = [...remainingParts];
+    sheetParts.sort((a, b) => b.cutL - a.cutL);
+
+    interface ColShelf {
+      x: number;
+      w: number;
+      usedH: number;
+      parts: PackedPart[];
+    }
+
+    const columns: ColShelf[] = [];
+    let currentX = 0;
+
+    for (const part of sheetParts) {
+      const rectW = part.cutL + K;
+      const rectH = part.cutW + K;
+      const orientations: { w: number; h: number; rot: boolean }[] = [];
+      const strictlyRespect = settings.respectGrain !== false;
+
+      if (strictlyRespect && part.grain === 'L') {
+        orientations.push({ w: rectW, h: rectH, rot: false });
+      } else if (strictlyRespect && part.grain === 'W') {
+        orientations.push({ w: rectH, h: rectW, rot: true });
+      } else {
+        orientations.push({ w: rectW, h: rectH, rot: false });
+        if (!strictlyRespect || part.allowRot) {
+          orientations.push({ w: rectH, h: rectW, rot: true });
+        }
+      }
+
+      let bestColIdx = -1;
+      let bestOrientation: typeof orientations[0] | null = null;
+      let bestColFitScore = -Infinity;
+
+      const currentlyPlaced: PackedPart[] = [];
+      for (const col of columns) {
+        currentlyPlaced.push(...col.parts);
+      }
+
+      for (let c = 0; c < columns.length; c++) {
+        const col = columns[c];
+        for (const opt of orientations) {
+          const leftoverH = binH - col.usedH - opt.h;
+          if (leftoverH >= -0.01 && opt.w <= col.w + 0.01) {
+            const widthWaste = col.w - opt.w;
+            const maxAllowedWidthWaste = Math.min(25.0, col.w * 0.15);
+            if (widthWaste > maxAllowedWidthWaste) {
+              continue;
+            }
+
+            const score = -(widthWaste * 1000 + leftoverH) + getAdjacencyScore(col.x, col.usedH, opt.w, opt.h, part, currentlyPlaced);
+            if (score > bestColFitScore) {
+              bestColFitScore = score;
+              bestColIdx = c;
+              bestOrientation = opt;
+            }
+          }
+        }
+      }
+
+      if (bestColIdx !== -1 && bestOrientation) {
+        const col = columns[bestColIdx];
+        const posX = col.x;
+        const posY = col.usedH;
+
+        col.parts.push({
+          id: part.id,
+          name: part.name,
+          x: posX,
+          y: posY,
+          w: bestOrientation.w,
+          h: bestOrientation.h,
+          origL: part.origL,
+          origW: part.origW,
+          cutL: part.cutL,
+          cutW: part.cutW,
+          isRotated: bestOrientation.rot,
+          edges: part.edges,
+          grain: part.grain,
+          drillHoles: transformHoles(part.drillHoles, bestOrientation.rot, part.cutL, part.cutW),
+        });
+
+        col.usedH += bestOrientation.h;
+
+        const entry = unplacedPartsMap.get(part.name);
+        if (entry) {
+          entry.qty -= 1;
+          if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+        }
+      } else {
+        let bestNewOpt: typeof orientations[0] | null = null;
+        let minNewColWidth = Infinity;
+
+        for (const opt of orientations) {
+          if (opt.h <= binH + 0.01 && currentX + opt.w <= binW + 0.01) {
+            if (opt.w < minNewColWidth) {
+              minNewColWidth = opt.w;
+              bestNewOpt = opt;
+            }
+          }
+        }
+
+        if (bestNewOpt) {
+          const colX = currentX;
+          const colW = bestNewOpt.w;
+
+          const newCol: ColShelf = {
+            x: colX,
+            w: colW,
+            usedH: bestNewOpt.h,
+            parts: [{
+              id: part.id,
+              name: part.name,
+              x: colX,
+              y: 0,
+              w: bestNewOpt.w,
+              h: bestNewOpt.h,
+              origL: part.origL,
+              origW: part.origW,
+              cutL: part.cutL,
+              cutW: part.cutW,
+              isRotated: bestNewOpt.rot,
+              edges: part.edges,
+              grain: part.grain,
+              drillHoles: transformHoles(part.drillHoles, bestNewOpt.rot, part.cutL, part.cutW),
+            }]
+          };
+
+          columns.push(newCol);
+          currentX += colW;
+
+          const entry = unplacedPartsMap.get(part.name);
+          if (entry) {
+            entry.qty -= 1;
+            if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+          }
+        } else {
+          stillToPack.push(part);
+        }
+      }
+    }
+
+    for (const col of columns) {
+      packedOnThisSheet.push(...col.parts);
+    }
+
+    return { packedOnThisSheet, stillToPack };
+  }
+
+  // --- GENERAL MULTI-RECTS ALGORITHMS (Guillotine / MaxRects) ---
+  let freeRects: FreeRect[] = [{ x: 0, y: 0, w: binW, h: binH }];
+
+  for (const part of remainingParts) {
+    let bestRectIndex = -1;
+    let bestIsRotated = false;
+    let finalW = 0;
+    let finalH = 0;
+
+    const rectW = part.cutL + K;
+    const rectH = part.cutW + K;
+
+    const orientations: { w: number; h: number; rot: boolean }[] = [];
+    const strictlyRespect = settings.respectGrain !== false;
+
+    if (strictlyRespect && part.grain === 'L') {
+      orientations.push({ w: rectW, h: rectH, rot: false });
+    } else if (strictlyRespect && part.grain === 'W') {
+      orientations.push({ w: rectH, h: rectW, rot: true });
+    } else {
+      orientations.push({ w: rectW, h: rectH, rot: false });
+      if (!strictlyRespect || part.allowRot) {
+        orientations.push({ w: rectH, h: rectW, rot: true });
+      }
+    }
+
+    if (currentAlgorithm.startsWith('Guillotine')) {
+      // --- GUILLOTINE PACKING (BSSF Heuristic) ---
+      let bestScore = Infinity;
+      const qtyLeft = unplacedPartsMap.get(part.name)?.qty || 1;
+      for (let r = 0; r < freeRects.length; r++) {
+        const f = freeRects[r];
+        for (const opt of orientations) {
+          if (opt.w <= f.w && opt.h <= f.h) {
+            const leftoverW = f.w - opt.w;
+            const leftoverH = f.h - opt.h;
+            const shortSideFit = Math.min(leftoverW, leftoverH);
+
+            const spaciousness = getSpaciousnessScore(f.w, f.h, opt.w, opt.h, qtyLeft, K);
+            const adjacency = getAdjacencyScore(f.x, f.y, opt.w, opt.h, part, packedOnThisSheet);
+
+            const isSnugW = leftoverW < 12.0;
+            const isSnugH = leftoverH < 12.0;
+            let snugBonus = 0;
+            if (isSnugW && isSnugH) snugBonus += 100000;
+            else if (isSnugW || isSnugH) snugBonus += 40000;
+
+            const rotationPenalty = opt.rot ? 50 : 0;
+
+            const score = shortSideFit - spaciousness - adjacency - snugBonus + rotationPenalty;
+
+            if (score < bestScore) {
+              bestScore = score;
+              bestRectIndex = r;
+              bestIsRotated = opt.rot;
+              finalW = opt.w;
+              finalH = opt.h;
+            }
+          }
+        }
+      }
+
+      if (bestRectIndex !== -1) {
+        const f = freeRects[bestRectIndex];
+        const posX = f.x;
+        const posY = f.y;
+
+        packedOnThisSheet.push({
+          id: part.id,
+          name: part.name,
+          x: posX,
+          y: posY,
+          w: finalW,
+          h: finalH,
+          origL: part.origL,
+          origW: part.origW,
+          cutL: part.cutL,
+          cutW: part.cutW,
+          isRotated: bestIsRotated,
+          edges: part.edges,
+          grain: part.grain,
+          drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
+        });
+
+        const leftoverW = f.w - finalW;
+        const leftoverH = f.h - finalH;
+
+        freeRects.splice(bestRectIndex, 1);
+
+        const isBssfSas = currentAlgorithm === 'GuillotineBssfSas';
+        const doHorizontalSplit = isBssfSas
+          ? leftoverW < leftoverH
+          : leftoverW >= leftoverH;
+
+        if (doHorizontalSplit) {
+          if (leftoverW > 0.01) {
+            freeRects.push({
+              x: f.x + finalW,
+              y: f.y,
+              w: leftoverW,
+              h: finalH,
+            });
+          }
+          if (leftoverH > 0.01) {
+            freeRects.push({
+              x: f.x,
+              y: f.y + finalH,
+              w: f.w,
+              h: leftoverH,
+            });
+          }
+        } else {
+          if (leftoverW > 0.01) {
+            freeRects.push({
+              x: f.x + finalW,
+              y: f.y,
+              w: leftoverW,
+              h: f.h,
+            });
+          }
+          if (leftoverH > 0.01) {
+            freeRects.push({
+              x: f.x,
+              y: f.y + finalH,
+              w: finalW,
+              h: leftoverH,
+            });
+          }
+        }
+
+        const entry = unplacedPartsMap.get(part.name);
+        if (entry) {
+          entry.qty -= 1;
+          if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+        }
+      } else {
+        stillToPack.push(part);
+      }
+    } else {
+      // --- MAXRECTS PACKING (Best Short Side Fit) ---
+      let bestScore = Infinity;
+      const qtyLeft = unplacedPartsMap.get(part.name)?.qty || 1;
+      for (let r = 0; r < freeRects.length; r++) {
+        const f = freeRects[r];
+        for (const opt of orientations) {
+          if (opt.w <= f.w && opt.h <= f.h) {
+            const leftoverW = f.w - opt.w;
+            const leftoverH = f.h - opt.h;
+            const shortSideFit = Math.min(leftoverW, leftoverH);
+
+            const spaciousness = getSpaciousnessScore(f.w, f.h, opt.w, opt.h, qtyLeft, K);
+            const adjacency = getAdjacencyScore(f.x, f.y, opt.w, opt.h, part, packedOnThisSheet);
+
+            const isSnugW = leftoverW < 12.0;
+            const isSnugH = leftoverH < 12.0;
+            let snugBonus = 0;
+            if (isSnugW && isSnugH) snugBonus += 100000;
+            else if (isSnugW || isSnugH) snugBonus += 40000;
+
+            const rotationPenalty = opt.rot ? 50 : 0;
+
+            const score = shortSideFit - spaciousness - adjacency - snugBonus + rotationPenalty;
+
+            if (score < bestScore) {
+              bestScore = score;
+              bestRectIndex = r;
+              bestIsRotated = opt.rot;
+              finalW = opt.w;
+              finalH = opt.h;
+            }
+          }
+        }
+      }
+
+      if (bestRectIndex !== -1) {
+        const f = freeRects[bestRectIndex];
+        const posX = f.x;
+        const posY = f.y;
+
+        packedOnThisSheet.push({
+          id: part.id,
+          name: part.name,
+          x: posX,
+          y: posY,
+          w: finalW,
+          h: finalH,
+          origL: part.origL,
+          origW: part.origW,
+          cutL: part.cutL,
+          cutW: part.cutW,
+          isRotated: bestIsRotated,
+          edges: part.edges,
+          grain: part.grain,
+          drillHoles: transformHoles(part.drillHoles, bestIsRotated, part.cutL, part.cutW),
+        });
+
+        const newFreeRects: FreeRect[] = [];
+        for (const freeR of freeRects) {
+          if (
+            posX < freeR.x + freeR.w &&
+            posX + finalW > freeR.x &&
+            posY < freeR.y + freeR.h &&
+            posY + finalH > freeR.y
+          ) {
+            if (posX > freeR.x) {
+              newFreeRects.push({
+                x: freeR.x,
+                y: freeR.y,
+                w: posX - freeR.x,
+                h: freeR.h,
+              });
+            }
+            if (posX + finalW < freeR.x + freeR.w) {
+              newFreeRects.push({
+                x: posX + finalW,
+                y: freeR.y,
+                w: freeR.x + freeR.w - (posX + finalW),
+                h: freeR.h,
+              });
+            }
+            if (posY > freeR.y) {
+              newFreeRects.push({
+                x: freeR.x,
+                y: freeR.y,
+                w: freeR.w,
+                h: posY - freeR.y,
+              });
+            }
+            if (posY + finalH < freeR.y + freeR.h) {
+              newFreeRects.push({
+                x: freeR.x,
+                y: posY + finalH,
+                w: freeR.w,
+                h: freeR.y + freeR.h - (posY + finalH),
+              });
+            }
+          } else {
+            newFreeRects.push(freeR);
+          }
+        }
+
+        freeRects = [];
+        for (let i = 0; i < newFreeRects.length; i++) {
+          let isContained = false;
+          for (let j = 0; j < newFreeRects.length; j++) {
+            if (i === j) continue;
+            const rA = newFreeRects[i];
+            const rB = newFreeRects[j];
+            if (
+              rA.x >= rB.x &&
+              rA.y >= rB.y &&
+              rA.x + rA.w <= rB.x + rB.w &&
+              rA.y + rA.h <= rB.y + rB.h
+            ) {
+              isContained = true;
+              break;
+            }
+          }
+          if (!isContained) {
+            freeRects.push(newFreeRects[i]);
+          }
+        }
+
+        const entry = unplacedPartsMap.get(part.name);
+        if (entry) {
+          entry.qty -= 1;
+          if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
+        }
+      } else {
+        stillToPack.push(part);
+      }
+    }
+  }
+
+  return { packedOnThisSheet, stillToPack };
 }

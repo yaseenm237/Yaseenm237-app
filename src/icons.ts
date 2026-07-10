@@ -18,6 +18,7 @@ import ClipboardList from 'lucide-react/dist/esm/icons/clipboard-list';
 import Clock from 'lucide-react/dist/esm/icons/clock';
 import Code from 'lucide-react/dist/esm/icons/code';
 import Copy from 'lucide-react/dist/esm/icons/copy';
+import CornerDownRight from 'lucide-react/dist/esm/icons/corner-down-right';
 import Database from 'lucide-react/dist/esm/icons/database';
 import DollarSign from 'lucide-react/dist/esm/icons/dollar-sign';
 import Download from 'lucide-react/dist/esm/icons/download';
@@ -46,11 +47,14 @@ import Layout from 'lucide-react/dist/esm/icons/layout';
 import List from 'lucide-react/dist/esm/icons/list';
 import ListFilter from 'lucide-react/dist/esm/icons/list-filter';
 import Loader2 from 'lucide-react/dist/esm/icons/loader-2';
+import Lock from 'lucide-react/dist/esm/icons/lock';
 import LogOut from 'lucide-react/dist/esm/icons/log-out';
 import Mail from 'lucide-react/dist/esm/icons/mail';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin';
 import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2';
 import Menu from 'lucide-react/dist/esm/icons/menu';
+import Mic from 'lucide-react/dist/esm/icons/mic';
+import MicOff from 'lucide-react/dist/esm/icons/mic-off';
 import MessageSquare from 'lucide-react/dist/esm/icons/message-square';
 import Minus from 'lucide-react/dist/esm/icons/minus';
 import Moon from 'lucide-react/dist/esm/icons/moon';
@@ -58,6 +62,7 @@ import MoreVertical from 'lucide-react/dist/esm/icons/more-vertical';
 import MousePointer2 from 'lucide-react/dist/esm/icons/mouse-pointer-2';
 import Navigation from 'lucide-react/dist/esm/icons/navigation';
 import Paintbrush from 'lucide-react/dist/esm/icons/paintbrush';
+import Pause from 'lucide-react/dist/esm/icons/pause';
 import Percent from 'lucide-react/dist/esm/icons/percent';
 import Phone from 'lucide-react/dist/esm/icons/phone';
 import PieChart from 'lucide-react/dist/esm/icons/pie-chart';
@@ -86,11 +91,14 @@ import Target from 'lucide-react/dist/esm/icons/target';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up';
 import Undo2 from 'lucide-react/dist/esm/icons/undo-2';
+import Unlock from 'lucide-react/dist/esm/icons/unlock';
 import Upload from 'lucide-react/dist/esm/icons/upload';
 import User from 'lucide-react/dist/esm/icons/user';
 import UserCircle from 'lucide-react/dist/esm/icons/user-circle';
 import UserCircle2 from 'lucide-react/dist/esm/icons/user-circle-2';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus';
+import Volume2 from 'lucide-react/dist/esm/icons/volume-2';
+import VolumeX from 'lucide-react/dist/esm/icons/volume-x';
 import Users from 'lucide-react/dist/esm/icons/users';
 import Wrench from 'lucide-react/dist/esm/icons/wrench';
 import X from 'lucide-react/dist/esm/icons/x';
@@ -117,6 +125,7 @@ export {
   Clock,
   Code,
   Copy,
+  CornerDownRight,
   Database,
   DollarSign,
   Download,
@@ -145,11 +154,14 @@ export {
   List,
   ListFilter,
   Loader2,
+  Lock,
   LogOut,
   Mail,
   MapPin,
   Maximize2,
   Menu,
+  Mic,
+  MicOff,
   MessageSquare,
   Minus,
   Moon,
@@ -157,6 +169,7 @@ export {
   MousePointer2,
   Navigation,
   Paintbrush,
+  Pause,
   Percent,
   Phone,
   PieChart,
@@ -185,11 +198,14 @@ export {
   Trash2,
   TrendingUp,
   Undo2,
+  Unlock,
   Upload,
   User,
   UserCircle,
   UserCircle2,
   UserPlus,
+  Volume2,
+  VolumeX,
   Users,
   Wrench,
   X,
