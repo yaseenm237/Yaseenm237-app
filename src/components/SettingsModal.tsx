@@ -419,6 +419,7 @@ export default function SettingsModal({
                               step="0.1"
                               min="0.1"
                               value={item.thickness || ''}
+                              onFocus={(e) => e.target.select()}
                               onChange={(e) => {
                                 const val = parseFloat(e.target.value) || 0;
                                 handleUpdateStock(item.id, 'thickness', val);
@@ -469,8 +470,17 @@ export default function SettingsModal({
                         <input
                           type="number"
                           min="1"
-                          value={item.quantity === undefined ? '' : item.quantity}
-                          onChange={(e) => handleUpdateStock(item.id, 'quantity', parseInt(e.target.value) || 1)}
+                          value={item.quantity === undefined || item.quantity === 0 ? '' : item.quantity}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleUpdateStock(item.id, 'quantity', val === '' ? 0 : parseInt(val) || 0);
+                          }}
+                          onBlur={() => {
+                            if (item.quantity === 0) {
+                              handleUpdateStock(item.id, 'quantity', 1);
+                            }
+                          }}
                           className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold text-center"
                         />
                       </div>
@@ -510,6 +520,7 @@ export default function SettingsModal({
                         <input
                           type="number"
                           value={item.length || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdateStock(item.id, 'length', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
                         />
@@ -523,6 +534,7 @@ export default function SettingsModal({
                         <input
                           type="number"
                           value={item.width || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdateStock(item.id, 'width', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
                         />
@@ -536,6 +548,7 @@ export default function SettingsModal({
                         <input
                           type="number"
                           value={item.cost || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdateStock(item.id, 'cost', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-bold"
                         />
@@ -587,6 +600,7 @@ export default function SettingsModal({
                       min="0"
                       step="0.1"
                       value={item.thickness === undefined ? '' : item.thickness}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => handleUpdateEdgeBand(item.id, 'thickness', parseFloat(e.target.value) || 0)}
                       className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
                       placeholder="e.g. 0.8"
@@ -646,6 +660,7 @@ export default function SettingsModal({
                       min="0"
                       step="0.1"
                       value={item.thickness === undefined ? '' : item.thickness}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => handleUpdateSunmica(item.id, 'thickness', parseFloat(e.target.value) || 0)}
                       className="w-full text-sm border-slate-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800"
                     />
@@ -833,6 +848,7 @@ export default function SettingsModal({
                   min="0"
                   step="0.1"
                   value={localSettings.bladeTh}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => handleFieldChange('bladeTh', parseFloat(e.target.value) || 0)}
                   className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />
@@ -848,6 +864,7 @@ export default function SettingsModal({
                   min="0"
                   step="1"
                   value={localSettings.trimMargin}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => handleFieldChange('trimMargin', parseFloat(e.target.value) || 0)}
                   className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />
@@ -863,6 +880,7 @@ export default function SettingsModal({
                   min="0"
                   step="0.1"
                   value={localSettings.edgeTh}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => handleFieldChange('edgeTh', parseFloat(e.target.value) || 0)}
                   className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 />

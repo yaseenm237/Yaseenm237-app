@@ -412,6 +412,7 @@ export default function SavedFilesModal({
                   <input
                     type="number"
                     value={metaCabinetCount}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setMetaCabinetCount(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl text-xs font-bold text-slate-850 dark:text-slate-100 focus:outline-indigo-500"
                     placeholder="e.g., 5"
@@ -425,6 +426,7 @@ export default function SavedFilesModal({
                   <input
                     type="number"
                     value={metaTotalCostEstimate}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) => setMetaTotalCostEstimate(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl text-xs font-bold text-slate-850 dark:text-slate-100 focus:outline-indigo-500"
                     placeholder="e.g., 15000"

@@ -1,3 +1,0 @@
-Configuration reference lines
-For patch and update operations
-Line-by-line reference data

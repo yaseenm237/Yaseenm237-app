@@ -525,8 +525,12 @@ export default function CuttingListPanel({
                         step="any"
                         min="0.1"
                         placeholder="0.0"
-                        value={part.length || ''}
-                        onChange={(e) => handleRowChange(part.id, 'length', Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={part.length === 0 ? '' : part.length}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleRowChange(part.id, 'length', val === '' ? 0 : parseFloat(val) || 0);
+                        }}
                         className="col-start-1 row-start-1 w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
                       />
                     </div>
@@ -543,8 +547,12 @@ export default function CuttingListPanel({
                         step="any"
                         min="0.1"
                         placeholder="0.0"
-                        value={part.width || ''}
-                        onChange={(e) => handleRowChange(part.id, 'width', Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={part.width === 0 ? '' : part.width}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleRowChange(part.id, 'width', val === '' ? 0 : parseFloat(val) || 0);
+                        }}
                         className="col-start-1 row-start-1 w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
                       />
                     </div>
@@ -587,8 +595,17 @@ export default function CuttingListPanel({
                     <input
                       type="number"
                       min="1"
-                      value={part.quantity}
-                      onChange={(e) => handleRowChange(part.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                      value={part.quantity === 0 ? '' : part.quantity}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        handleRowChange(part.id, 'quantity', val === '' ? 0 : Math.max(0, parseInt(val) || 0));
+                      }}
+                      onBlur={() => {
+                        if (part.quantity === 0) {
+                          handleRowChange(part.id, 'quantity', 1);
+                        }
+                      }}
                       className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 text-center font-semibold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none transition-colors"
                     />
                   </div>
@@ -949,27 +966,39 @@ export default function CuttingListPanel({
                           <span className="text-[10px] text-slate-500 font-bold">X:</span>
                           <input
                             type="number"
-                            value={h.x}
-                            onChange={(e) => updateHole(h.id, 'x', Number(e.target.value))}
-                            className="w-16 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            value={h.x === 0 ? '' : h.x}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateHole(h.id, 'x', val === '' ? 0 : parseFloat(val) || 0);
+                            }}
+                            className="w-16 text-xs border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-slate-500 font-bold">Y:</span>
                           <input
                             type="number"
-                            value={h.y}
-                            onChange={(e) => updateHole(h.id, 'y', Number(e.target.value))}
-                            className="w-16 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            value={h.y === 0 ? '' : h.y}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateHole(h.id, 'y', val === '' ? 0 : parseFloat(val) || 0);
+                            }}
+                            className="w-16 text-xs border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-slate-500 font-bold">Ø:</span>
                           <input
                             type="number"
-                            value={h.diameter}
-                            onChange={(e) => updateHole(h.id, 'diameter', Number(e.target.value))}
-                            className="w-14 text-xs border border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            value={h.diameter === 0 ? '' : h.diameter}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateHole(h.id, 'diameter', val === '' ? 0 : parseFloat(val) || 0);
+                            }}
+                            className="w-14 text-xs border-slate-200 rounded px-2 py-1.5 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
                           />
                         </div>
                         <button

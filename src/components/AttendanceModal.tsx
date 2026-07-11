@@ -2002,6 +2002,7 @@ export default function AttendanceModal({
                         <input
                           type="number"
                           value={newWorkerWage}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => setNewWorkerWage(e.target.value)}
                           className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-sm bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-bold"
                           placeholder="e.g. 500"
@@ -2335,6 +2336,7 @@ export default function AttendanceModal({
                           <input
                             type="number"
                             value={editingRecord.wage}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) =>
                               setEditingRecord({
                                 ...editingRecord,
@@ -2351,6 +2353,7 @@ export default function AttendanceModal({
                           <input
                             type="number"
                             value={editingRecord.kharchi}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) =>
                               setEditingRecord({
                                 ...editingRecord,
@@ -3016,6 +3019,7 @@ export default function AttendanceModal({
                         <input
                           type="number"
                           value={workerKharchi}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => setWorkerKharchi(e.target.value)}
                           placeholder="e.g. 100"
                           className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-900 dark:text-white text-rose-500"
@@ -3029,6 +3033,7 @@ export default function AttendanceModal({
                         <input
                           type="number"
                           value={workerCustomWage}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => setWorkerCustomWage(e.target.value)}
                           placeholder={`Default: ₹${workerAuthPayload.wage || 500}`}
                           className="w-full p-2.5 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-900 dark:text-white"

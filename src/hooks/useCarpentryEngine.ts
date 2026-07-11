@@ -291,8 +291,10 @@ export const useCarpentryEngine = () => {
           setResult(workerRes.result);
           success = true;
           if (compareResults) {
-            const comp = compareAlgorithms(parts, activeSettings);
-            setCompareResults(comp);
+            const compRes = await engineRef.current.compareAlgorithmsJS(parts, activeSettings);
+            if (compRes && compRes.status === 'success') {
+              setCompareResults(compRes.result);
+            }
           }
         } else {
           console.warn("[App] JS Worker failed:", workerRes);
@@ -324,7 +326,18 @@ export const useCarpentryEngine = () => {
     // short delay to show loading state
     await new Promise(resolve => setTimeout(resolve, 300));
     try {
-      const comp = compareAlgorithms(parts, settings);
+      let comp: AlgoComparison[] | null = null;
+      if (engineRef.current) {
+        const workerRes = await engineRef.current.compareAlgorithmsJS(parts, settings);
+        if (workerRes && workerRes.status === 'success') {
+          comp = workerRes.result;
+        }
+      }
+      
+      if (!comp) {
+        comp = compareAlgorithms(parts, settings);
+      }
+
       setCompareResults(comp);
       
       // Find the winner algorithm that uses the least sheets and has highest efficiency

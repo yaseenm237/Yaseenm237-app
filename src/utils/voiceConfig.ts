@@ -14,6 +14,13 @@ export interface VoiceConfig {
   enableNaturalBreathing: boolean;
   customFillerProbability: number;
   debugMode: boolean;
+  
+  // Eco-Lazer (Equalizer) Settings
+  eqEnabled: boolean;
+  eqBass: number;       // Gain in dB (-12 to +12)
+  eqMid: number;        // Gain in dB (-12 to +12)
+  eqTreble: number;     // Gain in dB (-12 to +12)
+  eqPreset: string;     // 'flat' | 'warm' | 'bright' | 'bass-boost' | 'vocal-clarity' | 'custom'
 }
 
 const STORAGE_KEY = 'sahira_voice_config_v1';
@@ -27,6 +34,13 @@ export const DEFAULT_VOICE_CONFIG: VoiceConfig = {
   enableNaturalBreathing: true,
   customFillerProbability: 0.25, // 25% chance to prefix sentences with warm carpenter fillers
   debugMode: false,
+  
+  // Equalizer Defaults to off
+  eqEnabled: false,
+  eqBass: 0,
+  eqMid: 0,
+  eqTreble: 0,
+  eqPreset: 'flat',
 };
 
 // Warm Hindi workshop fillers to sound like a natural human supervisor/partner

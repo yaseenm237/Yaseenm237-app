@@ -583,6 +583,7 @@ export default function CabinetDesignerModal({
                       <input
                         type="number"
                         value={height || ''}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => setHeight(Math.max(limits.height.min, parseFloat(e.target.value) || limits.height.min))}
                         className="w-full text-sm font-mono font-bold bg-transparent border-0 p-0 focus:ring-0"
                       />
@@ -598,6 +599,7 @@ export default function CabinetDesignerModal({
                       <input
                         type="number"
                         value={width || ''}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => setWidth(Math.max(limits.width.min, parseFloat(e.target.value) || limits.width.min))}
                         className="w-full text-sm font-mono font-bold bg-transparent border-0 p-0 focus:ring-0"
                       />
@@ -613,6 +615,7 @@ export default function CabinetDesignerModal({
                       <input
                         type="number"
                         value={depth || ''}
+                        onFocus={(e) => e.target.select()}
                         onChange={(e) => setDepth(Math.max(limits.depth.min, parseFloat(e.target.value) || limits.depth.min))}
                         className="w-full text-sm font-mono font-bold bg-transparent border-0 p-0 focus:ring-0"
                       />
@@ -1118,6 +1121,7 @@ export default function CabinetDesignerModal({
                                     max={maxVal}
                                     step="0.1"
                                     value={Number(currentVal.toFixed(1))}
+                                    onFocus={(e) => e.target.select()}
                                     onChange={(e) => {
                                       let v = parseFloat(e.target.value) || 0;
                                       if (v > maxVal) v = maxVal;
@@ -1140,6 +1144,7 @@ export default function CabinetDesignerModal({
                                       min="0"
                                       step="0.1"
                                       value={selectedNode.dummyWidth || (unit === 'Inch' ? 1.5 : unit === 'CM' ? 3.5 : 35)}
+                                      onFocus={(e) => e.target.select()}
                                       onChange={(e) => {
                                         let v = parseFloat(e.target.value) || 0;
                                         setRootNode(prev => updateNode(prev, selectedNode.id, n => ({ ...n, dummyWidth: v })));

@@ -266,6 +266,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                         <input
                           type="number"
                           value={item.length || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdate(item.id, 'length', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs font-mono border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                         />
@@ -277,6 +278,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                         <input
                           type="number"
                           value={item.width || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdate(item.id, 'width', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs font-mono border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                         />
@@ -288,6 +290,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                         <input
                           type="number"
                           value={item.qty || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdate(item.id, 'qty', parseInt(e.target.value) || 1)}
                           className="w-full text-xs font-mono border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                         />
@@ -299,6 +302,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                         <input
                           type="number"
                           value={item.rate || ''}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => handleUpdate(item.id, 'rate', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs font-mono border-slate-300 rounded-lg focus:ring-emerald-500 focus:border-emerald-500"
                         />

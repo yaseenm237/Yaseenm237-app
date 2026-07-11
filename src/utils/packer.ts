@@ -75,6 +75,16 @@ interface PartToPack {
   allowRot: boolean;
   edges: Edges;
   drillHoles?: DrillHole[];
+  isSuper?: boolean;
+  origPartId?: string;
+  colCount?: number;
+  rowCount?: number;
+  partW?: number;
+  partH?: number;
+  singleOrigL?: number;
+  singleOrigW?: number;
+  singleCutL?: number;
+  singleCutW?: number;
 }
 
 /**
@@ -143,11 +153,18 @@ export function runPacking(
   partsInput: PartInput[],
   settings: SheetSettings
 ): PackingResult {
+  const validPartsInput = partsInput.filter(part => {
+    const l = Number(part.length);
+    const w = Number(part.width);
+    const q = Number(part.quantity);
+    return l && w && q && !isNaN(l) && !isNaN(w) && !isNaN(q) && l > 0 && w > 0 && q > 0;
+  });
+
   const lockedLayouts = (settings.lockedLayouts || []).filter(l => l.isLocked);
   const lockedPartIds = new Set(lockedLayouts.flatMap(l => l.parts.map(p => p.id)));
 
-  // Subtract locked quantities from partsInput
-  const remainingPartsInput: PartInput[] = partsInput.map(part => {
+  // Subtract locked quantities from validPartsInput
+  const remainingPartsInput: PartInput[] = validPartsInput.map(part => {
     let lockedQty = 0;
     for (let q = 0; q < part.quantity; q++) {
       if (lockedPartIds.has(`${part.id}_${q}`)) {
@@ -431,7 +448,62 @@ export function runPackingSingleMaterial(
     if (hasL) totalBandingLength += lMm * part.quantity;
     if (hasR) totalBandingLength += lMm * part.quantity;
 
-    for (let q = 0; q < part.quantity; q++) {
+    const optW = cutL + K;
+    const optH = cutW + K;
+    let qtyLeft = part.quantity;
+
+    // Define maximum dimensions of a SuperPart grid (e.g. at most 800mm in either dimension to keep it easily packable and standard)
+    const MAX_GRID_SIZE = 800.0;
+
+    // Calculate maximum C and R that can fit within MAX_GRID_SIZE and also binW and binH
+    const maxC = Math.max(1, Math.floor(Math.min(MAX_GRID_SIZE, binW) / optW));
+    const maxR = Math.max(1, Math.floor(Math.min(MAX_GRID_SIZE, binH) / optH));
+
+    if (qtyLeft >= 20 && maxC * maxR > 1) {
+      while (qtyLeft >= 20) {
+        let C = maxC;
+        let R = maxR;
+        if (C * R > qtyLeft) {
+          const targetSide = Math.floor(Math.sqrt(qtyLeft));
+          C = Math.max(1, Math.min(maxC, targetSide));
+          R = Math.max(1, Math.min(maxR, Math.floor(qtyLeft / C)));
+        }
+        if (C * R <= 1) break;
+
+        const superId = `${part.id}_super_${qtyLeft}_${Math.random().toString(36).substring(2, 6)}`;
+        flatParts.push({
+          id: superId,
+          name: part.name || `Part ${flatParts.length + 1}`,
+          origL: lMm,
+          origW: wMm,
+          cutL: C * optW - K,
+          cutW: R * optH - K,
+          grain: part.grain,
+          allowRot: part.allowRot,
+          edges: { ...part.edges },
+          drillHoles: part.drillHoles ? part.drillHoles.map(h => ({
+            ...h,
+            x: convertToMm(h.x, unit),
+            y: convertToMm(h.y, unit),
+            diameter: convertToMm(h.diameter, unit),
+          })) : undefined,
+          isSuper: true,
+          origPartId: part.id,
+          colCount: C,
+          rowCount: R,
+          partW: optW,
+          partH: optH,
+          singleOrigL: lMm,
+          singleOrigW: wMm,
+          singleCutL: cutL,
+          singleCutW: cutW,
+        });
+
+        qtyLeft -= C * R;
+      }
+    }
+
+    for (let q = 0; q < qtyLeft; q++) {
       flatParts.push({
         id: `${part.id}_${q}`,
         name: part.name || `Part ${flatParts.length + 1}`,
@@ -468,11 +540,12 @@ export function runPackingSingleMaterial(
 
   // Initialize unplaced parts helper
   for (const p of flatParts) {
+    const qty = p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1;
     const entry = unplacedPartsMap.get(p.name);
     if (entry) {
-      entry.qty += 1;
+      entry.qty += qty;
     } else {
-      unplacedPartsMap.set(p.name, { name: p.name, qty: 1 });
+      unplacedPartsMap.set(p.name, { name: p.name, qty });
     }
   }
 
@@ -523,26 +596,89 @@ export function runPackingSingleMaterial(
     }
   }
 
+  // 1. Expand layouts (replace SuperParts with individual parts)
+  const flatPartsMap = new Map<string, PartToPack>();
+  for (const p of flatParts) {
+    flatPartsMap.set(p.id, p);
+  }
+
+  const expandedLayouts: SheetLayout[] = [];
+  for (const layout of layouts) {
+    const newParts: PackedPart[] = [];
+    for (const p of layout.parts) {
+      const origPart = flatPartsMap.get(p.id);
+      if (origPart && origPart.isSuper) {
+        const C = origPart.colCount || 1;
+        const R = origPart.rowCount || 1;
+        const partW = origPart.partW || p.w;
+        const partH = origPart.partH || p.h;
+        
+        for (let r = 0; r < R; r++) {
+          for (let c = 0; c < C; c++) {
+            let itemX = p.x;
+            let itemY = p.y;
+            let itemW = partW;
+            let itemH = partH;
+            let itemRot = p.isRotated;
+
+            if (!p.isRotated) {
+              itemX += c * partW;
+              itemY += r * partH;
+            } else {
+              itemX += r * partH;
+              itemY += c * partW;
+              itemW = partH;
+              itemH = partW;
+            }
+
+            newParts.push({
+              id: `${origPart.origPartId}_${r}_${c}_${Math.random().toString(36).substring(2, 5)}`,
+              name: p.name,
+              x: itemX,
+              y: itemY,
+              w: itemW,
+              h: itemH,
+              origL: origPart.singleOrigL || p.origL,
+              origW: origPart.singleOrigW || p.origW,
+              cutL: origPart.singleCutL || p.cutL,
+              cutW: origPart.singleCutW || p.cutW,
+              isRotated: itemRot,
+              edges: p.edges,
+              grain: p.grain,
+              drillHoles: transformHoles(origPart.drillHoles, itemRot, origPart.singleCutL || p.cutL, origPart.singleCutW || p.cutW),
+            });
+          }
+        }
+      } else {
+        newParts.push(p);
+      }
+    }
+    
+    expandedLayouts.push({
+      ...layout,
+      parts: newParts,
+    });
+  }
+
   // Calculate final statistics
-  const totalSheetsUsed = layouts.length;
+  const totalSheetsUsed = expandedLayouts.length;
   let totalPartsArea = 0;
-  for (const part of flatParts) {
-    if (!unplacedPartsMap.has(part.name) || (unplacedPartsMap.get(part.name)?.qty || 0) < flatParts.filter(x => x.name === part.name).length) {
-      totalPartsArea += part.origL * part.origW;
+  for (const layout of expandedLayouts) {
+    for (const p of layout.parts) {
+      totalPartsArea += p.origL * p.origW;
     }
   }
 
   const rawSheetArea = S_L * S_W;
   const totalRawAreaUsed = totalSheetsUsed * rawSheetArea;
 
-  // Material utilization = (Total cutting area of parts placed) / (Raw sheets area used) * 100
   const totalUtilization = totalRawAreaUsed > 0 ? (totalPartsArea / totalRawAreaUsed) * 100 : 0;
   const overallWastePercent = 100 - totalUtilization;
 
   const unplacedParts = Array.from(unplacedPartsMap.values()).filter(p => p.qty > 0);
 
   return {
-    layouts,
+    layouts: expandedLayouts,
     totalSheetsUsed,
     totalUtilization: Math.max(0, Math.min(100, totalUtilization)),
     overallWastePercent: Math.max(0, Math.min(100, overallWastePercent)),
@@ -843,7 +979,7 @@ export function pack_one_sheet(
 
         const entry = unplacedPartsMap.get(part.name);
         if (entry) {
-          entry.qty -= 1;
+          entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
           if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
         }
       } else {
@@ -890,7 +1026,7 @@ export function pack_one_sheet(
 
           const entry = unplacedPartsMap.get(part.name);
           if (entry) {
-            entry.qty -= 1;
+            entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
             if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
           }
         } else {
@@ -994,7 +1130,7 @@ export function pack_one_sheet(
 
         const entry = unplacedPartsMap.get(part.name);
         if (entry) {
-          entry.qty -= 1;
+          entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
           if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
         }
       } else {
@@ -1041,7 +1177,7 @@ export function pack_one_sheet(
 
           const entry = unplacedPartsMap.get(part.name);
           if (entry) {
-            entry.qty -= 1;
+            entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
             if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
           }
         } else {
@@ -1189,7 +1325,7 @@ export function pack_one_sheet(
 
         const entry = unplacedPartsMap.get(part.name);
         if (entry) {
-          entry.qty -= 1;
+          entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
           if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
         }
       } else {
@@ -1322,7 +1458,7 @@ export function pack_one_sheet(
 
         const entry = unplacedPartsMap.get(part.name);
         if (entry) {
-          entry.qty -= 1;
+          entry.qty -= part.isSuper ? ((part.colCount || 1) * (part.rowCount || 1)) : 1;
           if (entry.qty <= 0) unplacedPartsMap.delete(part.name);
         }
       } else {

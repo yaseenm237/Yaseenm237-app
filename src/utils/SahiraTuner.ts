@@ -4,12 +4,14 @@
  */
 
 import { VoiceConfig } from './voiceConfig';
+import { AudioProcessor } from './AudioProcessor';
 
 // Advanced Sahira Tuning Engine (Rust-Inspired Precision Algorithm)
 // We use high-resolution scaling (2000% scale instead of 2%) for ultra-fine tuning.
 export class AdvancedSahiraTuner {
   public static debugMode: boolean = false;
   private static readonly PRECISION_MULTIPLIER = 1000; // 2 -> 2000 for fine-grained tuning
+  private static readonly audioProcessor = new AudioProcessor();
 
   // 1. Math-based Smoothing (Bessel filter concepts for prosody)
   // We smooth the pauses between words as an 'S-Curve' (Sigmoid) instead of random
@@ -51,6 +53,10 @@ export class AdvancedSahiraTuner {
 
     window.speechSynthesis.cancel();
 
+    // Dynamically apply EQ and enabled settings to the AudioProcessor
+    AdvancedSahiraTuner.audioProcessor.isEnabled = config.eqEnabled ?? false;
+    AdvancedSahiraTuner.audioProcessor.setEQ(config.eqBass ?? 0, config.eqMid ?? 0, config.eqTreble ?? 0);
+
     // Dynamically filter out TTS "noise" artifacts
     const noiseFilteredText = this.applyNoiseFilter(text);
 
@@ -75,29 +81,45 @@ export class AdvancedSahiraTuner {
     const baseRatePrecise = config.rate * AdvancedSahiraTuner.PRECISION_MULTIPLIER;
     const computedRate = isCritical ? Math.max(0.7 * AdvancedSahiraTuner.PRECISION_MULTIPLIER, baseRatePrecise * 0.95) : baseRatePrecise;
     
-    utter.rate = computedRate / AdvancedSahiraTuner.PRECISION_MULTIPLIER;
-    utter.pitch = this.getAdaptivePitch(isCritical, config.pitch);
-    utter.volume = config.volume;
+    // 4. Phrase-level Jitter & Shimmer Simulation (Organic Micro-Variations)
+    // To mimic human voice imperfection, we introduce subtle organic jitter (pitch wobble) 
+    // and shimmer (amplitude wobble) dynamically on each phrase, so consecutive speech elements aren't flat.
+    const phraseJitter = 1.0 + (Math.random() - 0.5) * 0.03; // +/- 1.5% pitch wobble
+    const phraseShimmer = 1.0 + (Math.random() - 0.5) * 0.04; // +/- 2% amplitude shimmer
+    const phraseRateWobble = 1.0 + (Math.random() - 0.5) * 0.02; // +/- 1% rate variance
+
+    utter.rate = (computedRate / AdvancedSahiraTuner.PRECISION_MULTIPLIER) * phraseRateWobble;
+    utter.pitch = this.getAdaptivePitch(isCritical, config.pitch) * phraseJitter;
+    utter.volume = Math.min(1.0, Math.max(0.0, config.volume * phraseShimmer));
 
     const complexity = noiseFilteredText.length / 50; // simple heuristic for complexity
     const prosodyPause = this.calculateSmoothPause(complexity);
 
     if (AdvancedSahiraTuner.debugMode || config.debugMode) {
-      console.group('🎙️ AdvancedSahiraTuner: Prosody Output (High-Precision)');
+      console.group('🎙️ AdvancedSahiraTuner: Dynamic Prosody Output');
       console.log(`Original Text: "${text}"`);
       console.log(`Noise-Filtered Text: "${noiseFilteredText}"`);
       console.log(`Level: ${level}`);
       console.log(`Applied Rate: ${utter.rate.toFixed(4)}x (Base: ${config.rate})`);
       console.log(`Applied Pitch: ${utter.pitch.toFixed(4)} (Base: ${config.pitch})`);
+      console.log(`Applied Volume: ${utter.volume.toFixed(4)} (Base: ${config.volume})`);
       console.log(`Calculated Prosody Pause: ${prosodyPause.toFixed(4)}ms`);
       console.groupEnd();
     }
 
-    if (onStart) utter.onstart = onStart;
-    if (onEnd) {
-      utter.onend = onEnd;
-      utter.onerror = onEnd;
-    }
+    // Set up lifecycle hooks integrated with the Web Audio mixing console
+    utter.onstart = () => {
+      AdvancedSahiraTuner.audioProcessor.start();
+      if (onStart) onStart();
+    };
+
+    const handleEnd = () => {
+      AdvancedSahiraTuner.audioProcessor.stop();
+      if (onEnd) onEnd();
+    };
+
+    utter.onend = handleEnd;
+    utter.onerror = handleEnd;
 
     window.speechSynthesis.speak(utter);
   }
