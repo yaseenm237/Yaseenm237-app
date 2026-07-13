@@ -260,6 +260,8 @@ pub fn run_optimizer(val: JsValue) -> JsValue {
         }
 
         if packed_on_this_sheet.is_empty() {
+            // Restore remaining_parts before breaking so they aren't lost
+            remaining_parts = still_to_pack;
             break;
         }
 

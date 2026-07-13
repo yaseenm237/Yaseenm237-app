@@ -113,17 +113,18 @@ export const DEFAULT_SETTINGS: SheetSettings = {
   unit: 'Inch',
   sheetL: 96.0,
   sheetW: 48.0,
-  bladeTh: 3.0, // standard table saw kerf (3mm)
+  bladeTh: 4.0, // standard table saw kerf (3mm)
   trimMargin: 10.0, // standard trim margin (10mm)
+  trimEdges: { top: true, bottom: true, left: true, right: true }, // all edges trimmed by default
   edgeTh: 2.0, // standard edge banding (2mm)
   stock: 5,
   algorithm: 'AutoBest',
   sheetCost: 45.0,
   stockItems: [
-    { id: 'mat-plywood', name: 'Plywood (प्लाईवुड)', length: 96.0, width: 48.0, cost: 45.0, thickness: 18.0 },
-    { id: 'mat-plywood-16', name: 'Commercial Block Board (कमर्शियल बोर्ड)', length: 96.0, width: 48.0, cost: 40.0, thickness: 16.0 },
-    { id: 'mat-mdf', name: 'MDF (एमडीएफ)', length: 96.0, width: 48.0, cost: 35.0, thickness: 18.0 },
-    { id: 'mat-melamine', name: 'Melamine (मेलामाइन्)', length: 96.0, width: 48.0, cost: 40.0, thickness: 18.0 }
+    { id: 'mat-plywood', name: 'Plywood (प्लाईवुड)', length: 96.0, width: 48.0, cost: 45.0, thickness: 18.0, quantity: 10 },
+    { id: 'mat-plywood-16', name: 'Commercial Block Board (कमर्शियल बोर्ड)', length: 96.0, width: 48.0, cost: 40.0, thickness: 16.0, quantity: 10 },
+    { id: 'mat-mdf', name: 'MDF (एमडीएफ)', length: 96.0, width: 48.0, cost: 35.0, thickness: 18.0, quantity: 10 },
+    { id: 'mat-melamine', name: 'Melamine (मेलामाइन्)', length: 96.0, width: 48.0, cost: 40.0, thickness: 18.0, quantity: 10 }
   ],
   edgeBandItems: [
     { id: 'edge-white', name: 'White 0.8mm Edge Band', thickness: 0.8 },

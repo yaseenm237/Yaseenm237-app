@@ -145,19 +145,20 @@ function performMicroNesting(
       for (const p of layout.parts) {
         const px = Math.floor(p.x / scale);
         const py = Math.floor(p.y / scale);
-        const pw = Math.ceil(p.w / scale);
-        const ph = Math.ceil(p.h / scale);
+        const pw = Math.ceil((p.w + K) / scale);
+        const ph = Math.ceil((p.h + K) / scale);
         markOccupied(px, py, pw, ph, gridWidth, gridHeight, grid);
       }
       
-      // Mark trim margins of the sheet as occupied
+            // Mark trim margins of the sheet as occupied
       const T = settings.trimMargin || 0;
+      const trimEdges = settings.trimEdges || { top: true, bottom: true, left: true, right: true };
       if (T > 0) {
         const trimCells = Math.ceil(T / scale);
-        markOccupied(0, 0, trimCells, gridHeight, gridWidth, gridHeight, grid);
-        markOccupied(gridWidth - trimCells, 0, trimCells, gridHeight, gridWidth, gridHeight, grid);
-        markOccupied(0, 0, gridWidth, trimCells, gridWidth, gridHeight, grid);
-        markOccupied(0, gridHeight - trimCells, gridWidth, trimCells, gridWidth, gridHeight, grid);
+        if (trimEdges.left) markOccupied(0, 0, trimCells, gridHeight, gridWidth, gridHeight, grid);
+        if (trimEdges.right) markOccupied(gridWidth - trimCells, 0, trimCells, gridHeight, gridWidth, gridHeight, grid);
+        if (trimEdges.top) markOccupied(0, 0, gridWidth, trimCells, gridWidth, gridHeight, grid);
+        if (trimEdges.bottom) markOccupied(0, gridHeight - trimCells, gridWidth, trimCells, gridWidth, gridHeight, grid);
       }
       
       // Determine possible orientations based on grain / allowRot
@@ -199,8 +200,8 @@ function performMicroNesting(
               bestX = x * scale;
               bestY = y * scale;
               bestRot = opt.rot;
-              bestW = opt.w;
-              bestH = opt.h;
+              bestW = opt.rot ? part.cutW : part.cutL;
+              bestH = opt.rot ? part.cutL : part.cutW;
               break outerScan;
             }
           }
@@ -211,6 +212,7 @@ function performMicroNesting(
         // Place part in this sheet layout
         layout.parts.push({
           id: part.id,
+          internalId: part.internalId || part.id,
           name: part.name,
           x: bestX,
           y: bestY,
@@ -266,25 +268,33 @@ const engine = {
         res.unplacedParts = res.unplacedParts.filter((p: any) => p.qty > 0);
         const finalUnplacedCount = res.unplacedParts.reduce((sum: number, p: any) => sum + p.qty, 0);
         console.log(`[Worker] Micro-nesting placed ${originalUnplacedCount - finalUnplacedCount} pieces!`);
-        
-        // Re-calculate totals after micro nesting
-        let totalPartsArea = 0;
-        let totalRawAreaUsed = 0;
-        
-        for (const layout of res.layouts) {
-          totalRawAreaUsed += layout.totalArea;
-          for (const p of layout.parts) {
-            totalPartsArea += p.cutL * p.cutW;
-          }
+      }
+
+      // Re-calculate totals 
+      let totalPartsArea = 0;
+      let totalRawAreaUsed = 0;
+      let totalBandingLength = 0;
+      
+      for (const layout of res.layouts) {
+        totalRawAreaUsed += layout.totalArea;
+        for (const p of layout.parts) {
+          totalPartsArea += p.cutL * p.cutW;
+          
+          // Recalculate edge banding for placed parts
+          if (p.edges.T) totalBandingLength += p.origW;
+          if (p.edges.B) totalBandingLength += p.origW;
+          if (p.edges.L) totalBandingLength += p.origL;
+          if (p.edges.R) totalBandingLength += p.origL;
         }
-        
-        res.totalPartsArea = totalPartsArea;
-        res.totalSheetsUsed = res.layouts.length;
-        const totalUtilization = totalRawAreaUsed > 0 ? (totalPartsArea / totalRawAreaUsed) * 100 : 0;
-        res.totalUtilization = totalUtilization;
-        res.overallWastePercent = Math.max(0, Math.min(100, 100 - totalUtilization));
       }
       
+      res.totalBandingLength = totalBandingLength;
+      res.totalPartsArea = totalPartsArea;
+      res.totalSheetsUsed = res.layouts.length;
+      const totalUtilization = totalRawAreaUsed > 0 ? (totalPartsArea / totalRawAreaUsed) * 100 : 0;
+      res.totalUtilization = totalUtilization;
+      res.overallWastePercent = Math.max(0, Math.min(100, 100 - totalUtilization));
+            
       return { status: 'success', result: res };
     } catch (error) {
       console.error("[Worker] Error in runPackingJS:", error);

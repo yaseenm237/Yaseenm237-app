@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Language } from '../types';
 import { X, Calculator, Plus, Trash2, IndianRupee, Save, Share2, FileText, Check, AlertCircle, Calendar, RefreshCw } from 'lucide-react';
+import { useCarpentry } from '../context/CarpentryContext';
 
 interface EstimateItem {
   id: string;
@@ -24,6 +25,8 @@ interface EstimateCalculatorModalProps {
 }
 
 export default function EstimateCalculatorModal({ onClose, language }: EstimateCalculatorModalProps) {
+  const { settings } = useCarpentry();
+  const unit = settings.unit;
   const isHindi = language === 'Hindi';
   const [activeTab, setActiveTab] = useState<'calculator' | 'history'>('calculator');
   const [items, setItems] = useState<EstimateItem[]>([
@@ -62,7 +65,11 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
   };
 
   const calculateItem = (item: EstimateItem) => {
-    const sqft = (item.length * item.width * item.qty) / 929.0304;
+    let divisor = 144; // Default for Inch
+    if (unit === 'CM') divisor = 929.0304;
+    if (unit === 'MM') divisor = 92903.04;
+    
+    const sqft = (item.length * item.width * item.qty) / divisor;
     return {
       sqft: sqft,
       cost: sqft * item.rate
@@ -155,7 +162,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
         count++;
         const calc = calculateItem(item);
         text += `*${count}. ${item.name || 'Plywood Part'}*\n`;
-        text += `   Size: ${item.length} x ${item.width} cm | Qty: ${item.qty} pcs\n`;
+        text += `   Size: ${item.length} x ${item.width} ${unit} | Qty: ${item.qty} pcs\n`;
         text += `   Area: ${calc.sqft.toFixed(2)} SqFt | Rate: ₹${item.rate}/SqFt\n`;
         text += `   *Price: ₹${calc.cost.toFixed(2)}*\n\n`;
       });
@@ -196,8 +203,8 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
               </h2>
               <p className="text-sm text-slate-500 mt-0.5">
                 {isHindi 
-                  ? 'सेंटीमीटर (cm) इनपुट देकर स्क्वायर फीट (Sq.Ft) बिल बनाएं और इसे सेव करें' 
-                  : 'Enter dimensions in cm to calculate Sq.Ft billing and save estimates'}
+                  ? `${unit} इनपुट देकर स्क्वायर फीट (Sq.Ft) बिल बनाएं और इसे सेव करें` 
+                  : `Enter dimensions in ${unit} to calculate Sq.Ft billing and save estimates`}
               </p>
             </div>
           </div>
@@ -261,7 +268,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          {isHindi ? 'लंबाई (cm)' : 'Length (cm)'}
+                          {isHindi ? `लंबाई (${unit})` : `Length (${unit})`}
                         </label>
                         <input
                           type="number"
@@ -273,7 +280,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
                       </div>
                       <div className="md:col-span-2">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                          {isHindi ? 'चौड़ाई (cm)' : 'Width (cm)'}
+                          {isHindi ? `चौड़ाई (${unit})` : `Width (${unit})`}
                         </label>
                         <input
                           type="number"

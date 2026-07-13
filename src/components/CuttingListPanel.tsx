@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { PartInput, Language, Grain, Edges, SheetSettings } from '../types';
 import { CARPENTRY_PRESETS } from '../utils/presets';
+import { SmartBadge } from './SmartBadge';
 import { Plus, Trash2, ListFilter, ClipboardList, RotateCw, Sparkles, AlertCircle, X, Navigation, Target } from 'lucide-react';
 
 const GrainToggle = ({ 
@@ -397,7 +398,7 @@ export default function CuttingListPanel({
             style={{ 
               gridTemplateColumns: [
                 'minmax(220px, auto)',
-                hasMultiMaterials ? 'minmax(120px, auto)' : null,
+                hasMultiMaterials ? 'minmax(180px, auto)' : null,
                 'minmax(100px, auto)',
                 'minmax(100px, auto)',
                 'minmax(110px, auto)',
@@ -445,12 +446,9 @@ export default function CuttingListPanel({
                       {(() => {
                         const thick = getPartThickness(part);
                         return (
-                          <span 
-                            className="px-1.5 py-0.5 text-[9px] font-black bg-emerald-50 border border-emerald-200 text-emerald-700 rounded select-none shrink-0"
-                            title={isHindi ? `कुल दबाया हुआ पैनल मोटाई` : `Total pressed panel thickness`}
-                          >
-                            {thick}mm
-                          </span>
+                          <div title={isHindi ? `कुल दबाया हुआ पैनल मोटाई` : `Total pressed panel thickness`}>
+                            <SmartBadge bgColor="#10b981" text={`${thick}mm`} className="!text-[10px]" />
+                          </div>
                         );
                       })()}
                       <div className="relative inline-grid w-full">

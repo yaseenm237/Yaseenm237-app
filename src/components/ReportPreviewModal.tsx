@@ -306,7 +306,7 @@ export default function ReportPreviewModal({
                             <th className="p-2.5">{isHindi ? 'मात्रा' : 'QTY'}</th>
                             <th className="p-2.5">{isHindi ? 'आकार' : 'DIMENSIONS'}</th>
                             <th className="p-2.5">{isHindi ? 'रेशे का प्रकार' : 'GRAIN DIRECTION'}</th>
-                            <th className="p-2.5 pr-4">{isHindi ? 'एजबेंडिंग (T-B-L-R)' : 'EDGES BANDING'}</th>
+                            {settings.edgeTh > 0 && <th className="p-2.5 pr-4">{isHindi ? 'एजबेंडिंग (T-B-L-R)' : 'EDGES BANDING'}</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-slate-600 font-medium">
@@ -336,7 +336,7 @@ export default function ReportPreviewModal({
                                 <td className="p-2.5">{part.quantity}</td>
                                 <td className="p-2.5 font-mono">{part.length} x {part.width} {settings.unit}</td>
                                 <td className="p-2.5">{grainStr}</td>
-                                <td className="p-2.5 pr-4 text-indigo-600 font-semibold">{finalEdgeText}</td>
+                                {settings.edgeTh > 0 && <td className="p-2.5 pr-4 text-indigo-600 font-semibold">{finalEdgeText}</td>}
                               </tr>
                             );
                           })}
@@ -373,8 +373,14 @@ export default function ReportPreviewModal({
 
                   // Setup layout drawing dimensions
                   const T = settings.trimMargin;
-                  const rawLMm = layout.width + (2 * T);
-                  const rawWMm = layout.height + (2 * T);
+                  const trimEdges = settings.trimEdges || { top: true, bottom: true, left: true, right: true };
+                  const padTop = trimEdges.top ? T : 0;
+                  const padBottom = trimEdges.bottom ? T : 0;
+                  const padLeft = trimEdges.left ? T : 0;
+                  const padRight = trimEdges.right ? T : 0;
+                  
+                  const rawLMm = layout.width + padLeft + padRight;
+                  const rawWMm = layout.height + padTop + padBottom;
 
                   const maxDrawW = 160; // scale in mm of page
                   const scale = maxDrawW / rawLMm;

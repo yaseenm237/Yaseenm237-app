@@ -25,6 +25,8 @@ import AboutModal from './AboutModal';
 import UserSessionsModal from './UserSessionsModal';
 import WorkerSelfEntryPortal from './WorkerSelfEntryPortal';
 import CuttingListPanel from './CuttingListPanel';
+import { SmartBadge } from './SmartBadge';
+import { Tooltip } from './Tooltip';
 import LayoutVisualizerPanel from './LayoutVisualizerPanel';
 import ToastContainer from './Toast';
 import HeaderMenu from './HeaderMenu';
@@ -245,9 +247,29 @@ export default function AppWorkspace() {
             
             <div className="flex flex-col gap-2">
               {(settings.stockItems || []).map((item) => (
-                <div key={item.id} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-sm font-semibold text-slate-700 truncate max-w-[120px]">{item.name}</span>
-                  <span className="text-xs font-mono text-slate-500">{item.length}x{item.width} {settings.unit}</span>
+                <div key={item.id} className="flex flex-col gap-1.5 bg-slate-50 p-3 rounded-xl border border-slate-150 shadow-sm overflow-hidden">
+                  <div className="flex justify-between items-center gap-2">
+                    <Tooltip content={item.name} className="flex-1 min-w-0 truncate">
+                      <span className="text-sm font-bold text-slate-700 truncate block w-full text-left">{item.name}</span>
+                    </Tooltip>
+                    <div className="shrink-0">
+                      <SmartBadge bgColor="#e0e7ff" text={isHindi ? `मात्रा: ${item.quantity ?? 10}` : `Qty: ${item.quantity ?? 10}`} className="!text-indigo-900" />
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 mt-1 overflow-hidden">
+                    <Tooltip content={`${item.length} x ${item.width} ${settings.unit}`} className="flex-1 min-w-0 truncate">
+                      <span className="text-[11px] text-slate-500 font-mono font-semibold truncate block w-full text-left">
+                        {item.length} x {item.width} {settings.unit}
+                      </span>
+                    </Tooltip>
+                    {item.thickness && (
+                      <div className="shrink-0">
+                        <Tooltip content={`${item.thickness} mm`} className="flex-shrink-0">
+                          <SmartBadge bgColor="#e2e8f0" text={`${item.thickness} mm`} className="!text-slate-800" />
+                        </Tooltip>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

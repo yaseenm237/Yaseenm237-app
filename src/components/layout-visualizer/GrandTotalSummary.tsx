@@ -60,13 +60,13 @@ export default function GrandTotalSummary({
                     
                     const key = `${p.name}_${p.origL}_${p.origW}_${materialName}_${edgesSummary}_${edgeTape}`;
                     if (globalGroup.has(key)) {
-                      globalGroup.get(key)!.qty += 1;
+                      globalGroup.get(key)!.qty += (p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1);
                     } else {
                       globalGroup.set(key, { 
                         name: p.name, 
                         l: p.origL, 
                         w: p.origW, 
-                        qty: 1,
+                        qty: (p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1),
                         material: materialName,
                         edges: edgesSummary,
                         edgeTape: edgeTape
@@ -87,7 +87,7 @@ export default function GrandTotalSummary({
                         <div className="text-sm text-indigo-300 font-mono mt-1">{p.l.toFixed(1)} x {p.w.toFixed(1)} {settings.unit}</div>
                         <div className="flex flex-col gap-0.5 mt-2 text-xs text-indigo-200">
                           <div><span className="opacity-60">{isHindi ? 'बोर्ड मटीरियल:' : 'Board Material:'}</span> {p.material}</div>
-                          {p.edges !== '-' && p.edges !== 'कोई नहीं' && p.edges !== 'None' && (
+                          {settings.edgeTh > 0 && !p.edges.includes('None') && !p.edges.includes('कोई नहीं') && (
                             <div>
                               <span className="opacity-60">{isHindi ? 'एज बैंडिंग:' : 'Edge Banding:'}</span> {p.edges} ({p.edgeTape})
                             </div>

@@ -368,8 +368,7 @@ export const useCarpentryEngine = () => {
     }
   };
 
-  // Internal save and reset (Feature 4 & 3)
-  const saveJobToStorageAndReset = () => {
+  const saveJobSnapshot = () => {
     const job: SavedJob = {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
       name: `Project ${new Date().toLocaleString()}`,
@@ -378,20 +377,6 @@ export const useCarpentryEngine = () => {
       settings: { ...settings }
     };
     setSavedJobs(prev => [job, ...prev]);
-    
-    // Auto-clean
-    setParts([]);
-    setResult({
-      layouts: [],
-      totalSheetsUsed: 0,
-      totalUtilization: 0,
-      overallWastePercent: 0,
-      totalPartsArea: 0,
-      totalBandingLength: 0,
-      unplacedParts: []
-    });
-    setCompareResults(null);
-    setActiveJobId(null);
   };
 
   const handleUpdateJobSettings = (jobId: string, updatedSettings: SheetSettings) => {
@@ -504,7 +489,7 @@ export const useCarpentryEngine = () => {
     downloadAnchor.setAttribute("download", `carpentry_workspace_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
-    downloadAnchor.removeChild(downloadAnchor);
+    downloadAnchor.remove();
     addToast(isHindi ? "JSON सफलतापूर्वक एक्सपोर्ट किया गया!" : "JSON exported successfully!", "success");
   };
 
@@ -620,11 +605,11 @@ export const useCarpentryEngine = () => {
     if (result && parts && parts.length > 0) {
       try {
         generatePdfReport(parts, settings, result, language);
-        saveJobToStorageAndReset();
+        saveJobSnapshot();
       } catch (err) {
         console.error("PDF generation failed:", err);
         alert(language === 'Hindi' ? "पीडीएफ बनाने में त्रुटि: " + (err as Error).message : "Error generating PDF: " + (err as Error).message);
-        saveJobToStorageAndReset();
+        saveJobSnapshot();
       }
     } else {
       alert(language === 'Hindi' ? "निर्यात करने के लिए कोई डेटा नहीं है।" : "No data to export.");
@@ -704,7 +689,7 @@ export const useCarpentryEngine = () => {
     calculateResult,
     handleLanguageToggle,
     handleCompareAlgos,
-    saveJobToStorageAndReset,
+    saveJobSnapshot,
     handleUpdateJobSettings,
     handleExportCsv,
     handleExportJson,

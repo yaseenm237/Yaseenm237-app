@@ -87,22 +87,25 @@ export default function SettingsModal({
   };
 
   // Fallback to default stock item if empty
-  const stockItems = localSettings.stockItems?.length ? localSettings.stockItems : [
+  const stockItems = (localSettings.stockItems?.length ? localSettings.stockItems : [
     {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
       name: isHindi ? 'मानक बोर्ड' : 'Standard Board',
       length: localSettings.sheetL,
       width: localSettings.sheetW,
-      cost: localSettings.sheetCost
+      cost: localSettings.sheetCost,
+      quantity: 10
     }
-  ];
+  ]).map(item => ({
+    ...item,
+    quantity: item.quantity === undefined || item.quantity <= 0 ? 10 : item.quantity
+  }));
 
   const handleFieldChange = (key: keyof SheetSettings, value: any) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newUnit = e.target.value as Unit;
+  const handleUnitChange = (newUnit: Unit) => {
     const oldUnit = localSettings.unit;
     if (newUnit === oldUnit) return;
 
@@ -306,7 +309,10 @@ export default function SettingsModal({
   };
 
   const handleSave = () => {
-    onChange(localSettings);
+    onChange({
+      ...localSettings,
+      stockItems: stockItems
+    });
     onClose();
   };
 
@@ -827,15 +833,22 @@ export default function SettingsModal({
                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                   {isHindi ? "माप इकाई" : "Measurement Unit"}
                 </label>
-                <select
-                  value={localSettings.unit}
-                  onChange={handleUnitChange}
-                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  <option value="MM">Millimeters (MM)</option>
-                  <option value="CM">Centimeters (CM)</option>
-                  <option value="Inch">Inches (Inch)</option>
-                </select>
+                <div className="flex bg-slate-100 p-1 rounded-xl">
+                  {(['MM', 'CM', 'Inch'] as Unit[]).map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => handleUnitChange(u)}
+                      className={`flex-1 text-sm font-semibold py-1.5 rounded-lg transition-colors ${
+                        localSettings.unit === u 
+                          ? 'bg-white text-indigo-700 shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -850,7 +863,7 @@ export default function SettingsModal({
                   value={localSettings.bladeTh}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => handleFieldChange('bladeTh', parseFloat(e.target.value) || 0)}
-                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2.5"
                 />
               </div>
 
@@ -865,9 +878,41 @@ export default function SettingsModal({
                   step="1"
                   value={localSettings.trimMargin}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => handleFieldChange('trimMargin', parseFloat(e.target.value) || 0)}
-                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  onChange={(e) => {
+                    handleFieldChange('trimMargin', parseFloat(e.target.value) || 0);
+                    if (!localSettings.trimEdges) {
+                      handleFieldChange('trimEdges', { top: true, bottom: true, left: true, right: true });
+                    }
+                  }}
+                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2.5"
                 />
+                
+                {localSettings.trimMargin > 0 && (
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    {['top', 'bottom', 'left', 'right'].map(edge => {
+                      const edges = localSettings.trimEdges || { top: true, bottom: true, left: true, right: true };
+                      const label = isHindi 
+                        ? (edge === 'top' ? 'ऊपर' : edge === 'bottom' ? 'नीचे' : edge === 'left' ? 'बाएं' : 'दाएं')
+                        : edge.charAt(0).toUpperCase() + edge.slice(1);
+                      return (
+                        <label key={edge} className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={edges[edge as keyof typeof edges]} 
+                            onChange={(e) => {
+                              handleFieldChange('trimEdges', {
+                                ...edges,
+                                [edge]: e.target.checked
+                              });
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          />
+                          {label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -882,7 +927,7 @@ export default function SettingsModal({
                   value={localSettings.edgeTh}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => handleFieldChange('edgeTh', parseFloat(e.target.value) || 0)}
-                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2.5"
                 />
               </div>
             </div>
@@ -892,17 +937,22 @@ export default function SettingsModal({
                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                   {isHindi ? "नेस्टिंग एल्गोरिदम (Nesting Engine)" : "Nesting Algorithm"}
                 </label>
-                <select
-                  value={localSettings.algorithm}
-                  onChange={(e) => handleFieldChange('algorithm', e.target.value)}
-                  className="w-full text-sm font-medium border-slate-300 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-white"
-                >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 bg-slate-100 p-1.5 rounded-xl">
                   {ALGORITHMS.map(algo => (
-                    <option key={algo.key} value={algo.key}>
+                    <button
+                      key={algo.key}
+                      type="button"
+                      onClick={() => handleFieldChange('algorithm', algo.key)}
+                      className={`text-[10px] sm:text-xs font-semibold py-2 px-2 rounded-lg transition-colors text-center ${
+                        localSettings.algorithm === algo.key
+                          ? 'bg-white text-indigo-700 shadow-sm' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
                       {isHindi ? algo.labelHi : algo.labelEn}
-                    </option>
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
 
               <div className="flex items-center gap-3 bg-indigo-50/50 border border-indigo-100 rounded-xl p-4">

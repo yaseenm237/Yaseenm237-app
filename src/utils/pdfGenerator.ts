@@ -510,8 +510,14 @@ export function generatePdfReport(
 
     // Compute raw sizes in mm using the specific layout's usable width + trim margins
     const T = settings.trimMargin; // in mm
-    const rawLMm = layout.width + (2 * T);
-    const rawWMm = layout.height + (2 * T);
+    const trimEdges = settings.trimEdges || { top: true, bottom: true, left: true, right: true };
+    const padTop = trimEdges.top ? T : 0;
+    const padBottom = trimEdges.bottom ? T : 0;
+    const padLeft = trimEdges.left ? T : 0;
+    const padRight = trimEdges.right ? T : 0;
+    
+    const rawLMm = layout.width + padLeft + padRight;
+    const rawWMm = layout.height + padTop + padBottom;
 
     // Compute layout scaling
     const scale = Math.min(maxDrawWidth / rawLMm, maxDrawHeight / rawWMm);
@@ -587,77 +593,135 @@ export function generatePdfReport(
       const pw = part.w * scale;
       const ph = part.h * scale;
 
-      // Filled rectangle with nice soft carpentry color (light blue/indigo blend)
-      doc.setFillColor(224, 242, 254); // sky-100
-      doc.setDrawColor(14, 165, 233); // sky-500
-      doc.setLineWidth(0.35);
-      doc.rect(px, py, pw, ph, 'FD');
+      // Determine sub-part cells to draw individually
+      const cells: {
+        cx: number;
+        cy: number;
+        cw: number;
+        ch: number;
+      }[] = [];
 
-      // Part code / name
-      const cleanName = part.name || `P${pIdx + 1}`;
-      const sizeStr = `${formatDim(part.origL, settings.unit)} x ${formatDim(part.origW, settings.unit)}`;
-      
-      const cy = py + ph / 2;
+      if (part.isSuper && part.colCount && part.rowCount) {
+        const C = part.colCount;
+        const R = part.rowCount;
+        if (part.isRotated) {
+          const stepX = part.innerH! * scale;
+          const stepY = part.innerW! * scale;
+          const cellW = part.cutW * scale;
+          const cellH = part.cutL * scale;
+          for (let c = 0; c < R; c++) {
+            for (let r = 0; r < C; r++) {
+              cells.push({
+                cx: px + c * stepX,
+                cy: py + r * stepY,
+                cw: cellW,
+                ch: cellH,
+              });
+            }
+          }
+        } else {
+          const stepX = part.innerW! * scale;
+          const stepY = part.innerH! * scale;
+          const cellW = part.cutL * scale;
+          const cellH = part.cutW * scale;
+          for (let c = 0; c < C; c++) {
+            for (let r = 0; r < R; r++) {
+              cells.push({
+                cx: px + c * stepX,
+                cy: py + r * stepY,
+                cw: cellW,
+                ch: cellH,
+              });
+            }
+          }
+        }
+      } else {
+        cells.push({
+          cx: px,
+          cy: py,
+          cw: pw,
+          ch: ph,
+        });
+      }
 
-      // Precise non-overlapping vertical label alignment based on part's scaled height
-      if (ph >= 12) {
-        // We have plenty of vertical room (>= 12mm), draw name on top half and size on bottom half
-        const nameText = sanitizeText(cleanName);
-        const sizeText = sizeStr;
+      cells.forEach((cell) => {
+        const cx = cell.cx;
+        const cy = cell.cy;
+        const cw = cell.cw;
+        const ch = cell.ch;
 
-        // Draw Name Row (with scale-down protection for narrow parts)
-        doc.setFont('helvetica', 'bold');
-        let nameSize = 7.5;
-        doc.setFontSize(nameSize);
-        let nWidth = doc.getTextWidth(nameText);
-        while (nWidth > pw - 2 && nameSize > 5) {
-          nameSize--;
+        // Filled rectangle with nice soft carpentry color (light blue/indigo blend)
+        doc.setFillColor(224, 242, 254); // sky-100
+        doc.setDrawColor(14, 165, 233); // sky-500
+        doc.setLineWidth(0.35);
+        doc.rect(cx, cy, cw, ch, 'FD');
+
+        // Part code / name
+        const cleanName = part.name || `P${pIdx + 1}`;
+        const sizeStr = `${formatDim(part.origL, settings.unit)} x ${formatDim(part.origW, settings.unit)}`;
+        
+        const cellCenterY = cy + ch / 2;
+
+        // Precise non-overlapping vertical label alignment based on part's scaled height
+        if (ch >= 12) {
+          // We have plenty of vertical room (>= 12mm), draw name on top half and size on bottom half
+          const nameText = sanitizeText(cleanName);
+          const sizeText = sizeStr;
+
+          // Draw Name Row (with scale-down protection for narrow parts)
+          doc.setFont('helvetica', 'bold');
+          let nameSize = 7.5;
           doc.setFontSize(nameSize);
-          nWidth = doc.getTextWidth(nameText);
-        }
-        if (nWidth < pw - 1) {
-          doc.setTextColor(15, 23, 42);
-          doc.text(nameText, px + (pw - nWidth) / 2, cy - 0.5);
-        }
+          let nWidth = doc.getTextWidth(nameText);
+          while (nWidth > cw - 2 && nameSize > 5) {
+            nameSize--;
+            doc.setFontSize(nameSize);
+            nWidth = doc.getTextWidth(nameText);
+          }
+          if (nWidth < cw - 1) {
+            doc.setTextColor(15, 23, 42);
+            doc.text(nameText, cx + (cw - nWidth) / 2, cellCenterY - 0.5);
+          }
 
-        // Draw Size Row (with scale-down protection for narrow parts)
-        doc.setFont('helvetica', 'normal');
-        let sizeSize = 6.0;
-        doc.setFontSize(sizeSize);
-        let sWidth = doc.getTextWidth(sizeText);
-        while (sWidth > pw - 2 && sizeSize > 4.5) {
-          sizeSize--;
+          // Draw Size Row (with scale-down protection for narrow parts)
+          doc.setFont('helvetica', 'normal');
+          let sizeSize = 6.0;
           doc.setFontSize(sizeSize);
-          sWidth = doc.getTextWidth(sizeText);
-        }
-        if (sWidth < pw - 1) {
-          doc.setTextColor(71, 85, 105);
-          doc.text(sizeText, px + (pw - sWidth) / 2, cy + 2.8);
-        }
-      } else if (ph >= 5) {
-        // Less than 12mm height but still readable: Draw single consolidated centered line
-        doc.setFont('helvetica', 'bold');
-        const combinedText = pw > 25 ? `${sanitizeText(cleanName)} (${sizeStr})` : sanitizeText(cleanName);
-        let fontSize = 6.5;
-        doc.setFontSize(fontSize);
-        let tWidth = doc.getTextWidth(combinedText);
-        while (tWidth > pw - 2 && fontSize > 4) {
-          fontSize--;
+          let sWidth = doc.getTextWidth(sizeText);
+          while (sWidth > cw - 2 && sizeSize > 4.5) {
+            sizeSize--;
+            doc.setFontSize(sizeSize);
+            sWidth = doc.getTextWidth(sizeText);
+          }
+          if (sWidth < cw - 1) {
+            doc.setTextColor(71, 85, 105);
+            doc.text(sizeText, cx + (cw - sWidth) / 2, cellCenterY + 2.8);
+          }
+        } else if (ch >= 5) {
+          // Less than 12mm height but still readable: Draw single consolidated centered line
+          doc.setFont('helvetica', 'bold');
+          const combinedText = cw > 25 ? `${sanitizeText(cleanName)} (${sizeStr})` : sanitizeText(cleanName);
+          let fontSize = 6.5;
           doc.setFontSize(fontSize);
-          tWidth = doc.getTextWidth(combinedText);
+          let tWidth = doc.getTextWidth(combinedText);
+          while (tWidth > cw - 2 && fontSize > 4) {
+            fontSize--;
+            doc.setFontSize(fontSize);
+            tWidth = doc.getTextWidth(combinedText);
+          }
+          if (tWidth < cw - 1) {
+            doc.setTextColor(15, 23, 42);
+            doc.text(combinedText, cx + (cw - tWidth) / 2, cellCenterY + (fontSize * 0.35) / 2);
+          }
         }
-        if (tWidth < pw - 1) {
-          doc.setTextColor(15, 23, 42);
-          doc.text(combinedText, px + (pw - tWidth) / 2, cy + (fontSize * 0.35) / 2);
-        }
-      }
 
-      // Draw vector arrows for grain direction instead of buggy unicode glyphs (↕, ↔)
-      if (part.grain === 'L' && pw > 6 && ph > 8) {
-        drawVerticalGrainArrow(px + 2.2, py + 2.5, 3);
-      } else if (part.grain === 'W' && pw > 8 && ph > 6) {
-        drawHorizontalGrainArrow(px + 3, py + 2.2, 3);
-      }
+        // Draw vector arrows for grain direction instead of buggy unicode glyphs (↕, ↔)
+        if (part.grain === 'L' && cw > 6 && ch > 8) {
+          drawVerticalGrainArrow(cx + 2.2, cy + 2.5, 3);
+        } else if (part.grain === 'W' && cw > 8 && ch > 6) {
+          drawHorizontalGrainArrow(cx + 3, cy + 2.2, 3);
+        }
+      });
     });
 
     sy += sheetDrawH + 10;
@@ -698,7 +762,7 @@ export function generatePdfReport(
       if (!groupedParts.has(key)) {
         groupedParts.set(key, { qty: 0, name: p.name, origL: p.origL, origW: p.origW, cutL: p.cutL, cutW: p.cutW });
       }
-      groupedParts.get(key)!.qty++;
+      groupedParts.get(key)!.qty += (p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1);
     });
 
     let partIdx = 0;

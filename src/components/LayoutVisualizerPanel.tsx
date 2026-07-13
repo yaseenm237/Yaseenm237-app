@@ -10,6 +10,7 @@ import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { PackingResult, Language, SheetSettings, PackedPart, SheetLayout, CuttingInstruction } from '../types';
 import { convertMmToUnit, convertToMm, getEdgeBandingSummary } from '../utils/packer';
 import { generateSahiraSteps } from '../utils/sequencer';
+import { getContrastColor } from '../utils/colors';
 import { Download, Printer, Layout, Percent, ClipboardCheck, Ruler, AlertCircle, ZoomIn, ZoomOut, Sliders, Check, X, RotateCw, Undo2, PlusCircle, Lock, Unlock, CornerDownRight, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // Modular Sub-components
@@ -33,16 +34,18 @@ interface LayoutVisualizerPanelProps {
 
 // Generate unique colors based on part name/size
 const COLOR_PALETTE = [
-  '#dbeafe', // light blue
-  '#fef3c7', // light amber
-  '#d1fae5', // light emerald
-  '#f3e8ff', // light purple
-  '#ffe4e6', // light rose
-  '#ccfbf1', // light teal
-  '#ffedd5', // light orange
-  '#e0e7ff', // light indigo
-  '#f1f5f9', // light slate
-  '#fae8ff', // light fuchsia
+  '#bae6fd', // sky 200
+  '#fde047', // yellow 300
+  '#86efac', // green 300
+  '#d8b4fe', // purple 300
+  '#fca5a5', // red 300
+  '#5eead4', // teal 300
+  '#fdba74', // orange 300
+  '#a5b4fc', // indigo 300
+  '#cbd5e1', // slate 300
+  '#f9a8d4', // pink 300
+  '#d9f99d', // lime 200
+  '#bfdbfe', // blue 200
 ];
 
 function getPartColor(name: string, index: number): string {
@@ -173,16 +176,19 @@ export default function LayoutVisualizerPanel({
     sheetW: settings.sheetW,
     unit: settings.unit,
     trimMargin: settings.trimMargin,
+    trimEdgesStr: JSON.stringify(settings.trimEdges),
     bladeTh: settings.bladeTh,
   });
 
   React.useEffect(() => {
     const prev = lastSettingsRef.current;
+    const currentTrimEdgesStr = JSON.stringify(settings.trimEdges);
     if (
       prev.sheetL !== settings.sheetL ||
       prev.sheetW !== settings.sheetW ||
       prev.unit !== settings.unit ||
       prev.trimMargin !== settings.trimMargin ||
+      prev.trimEdgesStr !== currentTrimEdgesStr ||
       prev.bladeTh !== settings.bladeTh
     ) {
       setCustomLayoutOverrides({});
@@ -193,9 +199,10 @@ export default function LayoutVisualizerPanel({
       sheetW: settings.sheetW,
       unit: settings.unit,
       trimMargin: settings.trimMargin,
+      trimEdgesStr: currentTrimEdgesStr,
       bladeTh: settings.bladeTh,
     };
-  }, [settings.sheetL, settings.sheetW, settings.unit, settings.trimMargin, settings.bladeTh]);
+  }, [settings.sheetL, settings.sheetW, settings.unit, settings.trimMargin, settings.trimEdges, settings.bladeTh]);
 
   const [showGrid, setShowGrid] = useState(true);
   const [showRuler, setShowRuler] = useState(true);
@@ -207,6 +214,11 @@ export default function LayoutVisualizerPanel({
   const unit = settings.unit;
   const K = settings.bladeTh; // Kerf in mm
   const T = settings.trimMargin; // Trim in mm
+  const trimEdges = settings.trimEdges || { top: true, bottom: true, left: true, right: true };
+  const padTop = trimEdges.top ? T : 0;
+  const padBottom = trimEdges.bottom ? T : 0;
+  const padLeft = trimEdges.left ? T : 0;
+  const padRight = trimEdges.right ? T : 0;
 
   // Construct effective layouts
   const effectiveLayouts = React.useMemo(() => {
@@ -225,6 +237,16 @@ export default function LayoutVisualizerPanel({
     }, 0);
   }, [effectiveLayouts]);
 
+  const totalKerfLossMm2 = React.useMemo(() => {
+    return effectiveLayouts.reduce((acc, layout) => {
+      const partsArea = layout.parts.reduce((partAcc, part) => partAcc + (part.w * part.h), 0);
+      const wasteArea = (layout.wasteRects || []).reduce((wasteAcc, w) => wasteAcc + (w.w * w.h), 0);
+      const totalBoardUsableArea = layout.width * layout.height;
+      let sheetKerfArea = totalBoardUsableArea - partsArea - wasteArea;
+      if (sheetKerfArea < 0) sheetKerfArea = 0; // Safeguard
+      return acc + sheetKerfArea;
+    }, 0);
+  }, [effectiveLayouts, settings.bladeTh]);
   const totalAvailableArea = React.useMemo(() => {
     return effectiveLayouts.reduce((acc, layout) => acc + (layout.width * layout.height), 0);
   }, [effectiveLayouts]);
@@ -508,7 +530,7 @@ export default function LayoutVisualizerPanel({
 
   const updatePartCoords = (partId: string, newX: number, newY: number, usableW: number, usableH: number) => {
     setEditingParts(prev => {
-      const target = prev.find(p => p.id === partId);
+      const target = prev.find(p => (p.internalId || p.id) === partId);
       if (!target) return prev;
 
       let finalX = newX;
@@ -523,7 +545,7 @@ export default function LayoutVisualizerPanel({
         // Edge snap to other parts
         const SNAP_THRESHOLD = 12; // 12mm is a very comfortable snapping range
         for (const other of prev) {
-          if (other.id === partId) continue;
+          if ((other.internalId || other.id) === partId) continue;
 
           // Align X to other's left or right
           if (Math.abs(finalX - other.x) < SNAP_THRESHOLD) finalX = other.x;
@@ -533,9 +555,9 @@ export default function LayoutVisualizerPanel({
 
           // Align Y to other's top or bottom
           if (Math.abs(finalY - other.y) < SNAP_THRESHOLD) finalY = other.y;
-          else if (Math.abs(finalY + target.h - other.y) < SNAP_THRESHOLD) finalY = other.y - target.h;
+          else if (Math.abs(finalY + target.h - other.y) < SNAP_THRESHOLD) finalY = Math.max(0, other.y - target.h);
           else if (Math.abs(finalY - (other.y + other.h)) < SNAP_THRESHOLD) finalY = other.y + other.h;
-          else if (Math.abs(finalY + target.h - (other.y + other.h)) < SNAP_THRESHOLD) finalY = other.y + other.h - target.h;
+          else if (Math.abs(finalY + target.h - (other.y + other.h)) < SNAP_THRESHOLD) finalY = Math.max(0, other.y + other.h - target.h);
         }
       }
 
@@ -543,18 +565,17 @@ export default function LayoutVisualizerPanel({
       finalX = Math.max(0, Math.min(usableW - target.w, finalX));
       finalY = Math.max(0, Math.min(usableH - target.h, finalY));
 
-      return prev.map(p => p.id === partId ? { ...p, x: finalX, y: finalY } : p);
+      return prev.map(p => (p.internalId || p.id) === partId ? { ...p, x: finalX, y: finalY } : p);
     });
   };
 
   const handleRotatePart = (partId: string) => {
     setEditingParts(prev => {
       return prev.map(p => {
-        if (p.id !== partId) return p;
+        if ((p.internalId || p.id) !== partId) return p;
         const newW = p.h;
         const newH = p.w;
         const newIsRotated = !p.isRotated;
-
         return {
           ...p,
           w: newW,
@@ -656,6 +677,7 @@ export default function LayoutVisualizerPanel({
         totalUtilization={totalUtilization}
         overallWastePercent={overallWastePercent}
         totalSheetsUsed={totalSheetsUsed}
+        totalKerfLossMm2={totalKerfLossMm2}
         totalBandingLength={totalBandingLength}
         settings={settings}
         translations={translations}
@@ -795,6 +817,7 @@ export default function LayoutVisualizerPanel({
           const sahiraSteps = generateSahiraSteps(layout, settings);
           const activeStepIdx = activeStepIndices[layout.sheetIndex] ?? 0;
           const activeStep = sahiraSteps[activeStepIdx];
+          const pastCutPartIds = new Set(sahiraSteps.slice(0, activeStepIdx).flatMap(s => s.affectedPartIds || []));
 
           return (
             <div 
@@ -1356,10 +1379,10 @@ export default function LayoutVisualizerPanel({
                     {/* 2. Trim Boundary Line (dashed) */}
                     {T > 0 && (
                       <rect 
-                        x={pad + T} 
-                        y={pad + T} 
-                        width={rawLMm - 2 * T} 
-                        height={rawWMm - 2 * T} 
+                        x={pad + padLeft} 
+                        y={pad + padTop} 
+                        width={rawLMm - padLeft - padRight} 
+                        height={rawWMm - padTop - padBottom} 
                         fill="none" 
                         stroke="#94a3b8" 
                         strokeWidth="1.5" 
@@ -1370,8 +1393,8 @@ export default function LayoutVisualizerPanel({
                     {/* Trim label */}
                     {T > 0 && (
                       <text 
-                        x={pad + T + 4} 
-                        y={pad + T - 4} 
+                        x={pad + Math.max(padLeft, 4)} 
+                        y={pad + Math.max(padTop - 4, 20)} 
                         fill="#64748b" 
                         fontSize="24" 
                         fontWeight="semibold"
@@ -1382,8 +1405,8 @@ export default function LayoutVisualizerPanel({
 
                      {/* 3b. Waste Rectangles (Off-cuts) - Hide when editing this sheet manually to avoid overlay issues */}
                     {editingSheetIndex !== layout.sheetIndex && layout.wasteRects?.map((waste, wIdx) => {
-                      const wasteX = pad + T + waste.x;
-                      const wasteY = pad + T + waste.y;
+                      const wasteX = pad + padLeft + waste.x;
+                      const wasteY = pad + padTop + waste.y;
                       const drawW = waste.w;
                       const drawH = waste.h;
 
@@ -1465,8 +1488,8 @@ export default function LayoutVisualizerPanel({
                         : { hasCollision: new Set<string>(), isOutOfBounds: new Set<string>() };
 
                       return activeParts.map((part, pIdx) => {
-                        const partX = pad + T + part.x;
-                        const partY = pad + T + part.y;
+                        const partX = pad + padLeft + part.x;
+                        const partY = pad + padTop + part.y;
                         const drawW = Math.max(1, part.w - K);
                         const drawH = Math.max(1, part.h - K);
                         
@@ -1481,6 +1504,7 @@ export default function LayoutVisualizerPanel({
                         let strokeDash = undefined;
                         
                         const isActiveCuttingPart = activeStep && activeStep.affectedPartIds?.includes(part.id);
+                        const isPastCuttingPart = showStepSequencer && pastCutPartIds.has(part.id);
 
                         if (isEditingThisSheet) {
                           if (isColliding || isOOB) {
@@ -1492,467 +1516,201 @@ export default function LayoutVisualizerPanel({
                             strokeColor = "#4f46e5"; // Indigo select glow
                             strokeW = "2.5";
                           }
-                        } else if (isActiveCuttingPart) {
-                          strokeColor = "#e11d48"; // Vivid crimson for active cut pieces
-                          strokeW = "4";
-                          strokeDash = "4,2";
+                        } else if (isPastCuttingPart) {
+                          rectFill = "#f8fafc"; // slate-50
+                          strokeColor = "#cbd5e1"; // slate-300
                         }
 
                         return (
                           <g 
-                            key={part.id} 
+                            key={part.internalId || part.id} 
                             className={`group/part ${isEditingThisSheet ? 'cursor-grab active:cursor-grabbing' : 'cursor-help'}`}
                             onMouseDown={(e) => {
                               if (isEditingThisSheet) {
-                                handlePartMouseDown(e, part.id, part.x, part.y);
+                                handlePartMouseDown(e, part.internalId || part.id, part.x, part.y);
                               }
                             }}
                             onTouchStart={(e) => {
                               if (isEditingThisSheet) {
-                                handlePartTouchStart(e, part.id, part.x, part.y);
+                                handlePartTouchStart(e, part.internalId || part.id, part.x, part.y);
                               }
                             }}
                             onDoubleClick={() => {
                               if (isEditingThisSheet) {
-                                handleRotatePart(part.id);
+                                handleRotatePart(part.internalId || part.id);
                               }
                             }}
                           >
-                            {/* Part Board Base Rectangle */}
-                            <rect 
-                              x={partX} 
-                              y={partY} 
-                              width={drawW} 
-                              height={drawH} 
-                              fill={rectFill} 
-                              stroke={strokeColor} 
-                              strokeWidth={strokeW} 
-                              strokeDasharray={strokeDash}
-                              rx="1.5"
-                              className={isSelected ? "filter drop-shadow-[0_0_4px_rgba(79,70,229,0.4)]" : ""}
-                            />
-
-                            {/* Edge Banding Visual Indicators */}
-                            {part.edges.T && (
-                              <line 
-                                x1={partX + 1.5} 
-                                y1={partY + 1.5} 
-                                x2={partX + drawW - 1.5} 
-                                y2={partY + 1.5} 
-                                stroke="#ea580c" 
-                                strokeWidth="3.5" 
-                                strokeDasharray="3,2" 
-                              />
-                            )}
-                            {part.edges.B && (
-                              <line 
-                                x1={partX + 1.5} 
-                                y1={partY + drawH - 1.5} 
-                                x2={partX + drawW - 1.5} 
-                                y2={partY + drawH - 1.5} 
-                                stroke="#ea580c" 
-                                strokeWidth="3.5" 
-                                strokeDasharray="3,2" 
-                              />
-                            )}
-                            {part.edges.L && (
-                              <line 
-                                x1={partX + 1.5} 
-                                y1={partY + 1.5} 
-                                x2={partX + 1.5} 
-                                y2={partY + drawH - 1.5} 
-                                stroke="#ea580c" 
-                                strokeWidth="3.5" 
-                                strokeDasharray="3,2" 
-                              />
-                            )}
-                            {part.edges.R && (
-                              <line 
-                                x1={partX + drawW - 1.5} 
-                                y1={partY + 1.5} 
-                                x2={partX + drawW - 1.5} 
-                                y2={partY + drawH - 1.5} 
-                                stroke="#ea580c" 
-                                strokeWidth="3.5" 
-                                strokeDasharray="3,2" 
-                              />
-                            )}
-
-                             {/* Text Labels inside Part */}
-                             {drawW > 45 && drawH > 25 ? (
-                               <>
-                                 {part.partNumber && (
-                                   <text
-                                     x={partX + drawW / 2}
-                                     y={partY + drawH / 2 - 16}
-                                     textAnchor="middle"
-                                     dominantBaseline="middle"
-                                     fill="#4f46e5"
-                                     fontSize={Math.min(16, drawW / 5)}
-                                     fontWeight="black"
-                                     className="select-none pointer-events-none font-mono"
-                                   >
-                                     No. {part.partNumber}
-                                   </text>
-                                 )}
-                                 <text 
-                                   x={partX + drawW / 2} 
-                                   y={partY + drawH / 2 + (part.partNumber ? 2 : -3)} 
-                                   textAnchor="middle" 
-                                   dominantBaseline="middle"
-                                   fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
-                                   fontSize={Math.min(12, drawW / 6)} 
-                                   fontWeight="bold"
-                                   className="select-none pointer-events-none"
-                                 >
-                                   {part.name}
-                                 </text>
-                                 <text 
-                                   x={partX + drawW / 2} 
-                                   y={partY + drawH / 2 + (part.partNumber ? 18 : 8)} 
-                                   textAnchor="middle" 
-                                   dominantBaseline="middle"
-                                   fill={isColliding || isOOB ? "#b91c1c" : "#475569"} 
-                                   fontSize={Math.min(10, drawW / 7)} 
-                                   fontWeight="semibold"
-                                   className="select-none pointer-events-none"
-                                 >
-                                   {formatDimPair(part.origL, part.origW)}
-                                 </text>
-                               </>
-                             ) : drawW > 25 && drawH > 15 ? (
-                               <text 
-                                 x={partX + drawW / 2} 
-                                 y={partY + drawH / 2} 
-                                 textAnchor="middle" 
-                                 dominantBaseline="middle"
-                                 fill={isColliding || isOOB ? "#991b1b" : "#1e293b"} 
-                                 fontSize="22" 
-                                 fontWeight="bold"
-                                 className="select-none pointer-events-none"
-                               >
-                                 {part.partNumber ? `No. ${part.partNumber}` : part.name.substring(0, 3) + '..'}
-                               </text>
-                             ) : null}
-
-                            {/* Drill Holes */}
-                            {part.drillHoles?.map((hole, hIdx) => {
-                              const hX = partX + hole.x;
-                              const hY = partY + hole.y;
-                              const hDia = hole.diameter;
-                              return (
-                                <g key={`hole-${part.id}-${hIdx}`}>
-                                  <circle 
-                                    cx={hX} 
-                                    cy={hY} 
-                                    r={hDia / 2} 
-                                    fill="#f8fafc" 
-                                    stroke="#3b82f6" 
-                                    strokeWidth="1"
-                                  />
-                                  <circle 
-                                    cx={hX} 
-                                    cy={hY} 
-                                    r={1} 
-                                    fill="#1d4ed8" 
-                                  />
-                                </g>
-                              );
-                            })}
-
-                            {/* Active Cutting Badge Overlay */}
-                            {isActiveCuttingPart && drawW > 50 && drawH > 22 && (
-                              <g className="animate-pulse">
-                                <rect 
-                                  x={partX + drawW / 2 - 35} 
-                                  y={partY + drawH / 2 - 25} 
-                                  width="70" 
-                                  height="14" 
-                                  rx="3" 
-                                  fill="#e11d48" 
-                                />
-                                <text
-                                  x={partX + drawW / 2}
-                                  y={partY + drawH / 2 - 18}
-                                  textAnchor="middle"
-                                  dominantBaseline="middle"
-                                  fill="#ffffff"
-                                  fontSize="7.5"
-                                  fontWeight="black"
-                                  className="select-none pointer-events-none"
-                                >
-                                  {isHindi ? "कटिंग जारी" : "CUTTING"}
-                                </text>
-                              </g>
-                            )}
-
-                            {/* Rich Tooltip */}
-                            <title>
-                              {part.name}&#10;
-                              {isHindi ? 'तैयार साइज़' : 'Finished Size'}: {formatDimPair(part.origL, part.origW)}&#10;
-                              {isHindi ? 'कटिंग साइज़' : 'Cut Size (Net)'}: {convertMmToUnit(part.cutL, unit).toFixed(1)} x {convertMmToUnit(part.cutW, unit).toFixed(1)} {unit}&#10;
-                              {isHindi ? 'एजबेंडिंग' : 'Banding'}: {getEdgeBandingSummary(part.edges, isHindi)}&#10;
-                              {isHindi ? 'ग्रेन' : 'Grain'}: {part.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : part.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
-                              {isEditingThisSheet && isColliding && `\n⚠️ ${isHindi ? 'ओवरलैप हो रहा है!' : 'Overlaps other parts!'}`}
-                              {isEditingThisSheet && isOOB && `\n⚠️ ${isHindi ? 'शीट के बाहर है!' : 'Out of sheet bounds!'}`}
-                            </title>
+                            {(() => {
+                              const cells = [{
+                                cellX: partX,
+                                cellY: partY,
+                                cellW: drawW,
+                                cellH: drawH,
+                                key: part.id
+                              }];
+                              
+                              return cells.map((cell) => {
+                                const cx = cell.cellX;
+                                const cy = cell.cellY;
+                                const cw = cell.cellW;
+                                const ch = cell.cellH;
+                                const textFill = getContrastColor(rectFill);
+                                
+                                // Map original edges to the rendered orientation
+                                let renderT = part.edges.T;
+                                let renderB = part.edges.B;
+                                let renderL = part.edges.L;
+                                let renderR = part.edges.R;
+                                
+                                if (part.isRotated) {
+                                  renderT = part.edges.R;
+                                  renderB = part.edges.L;
+                                  renderL = part.edges.T;
+                                  renderR = part.edges.B;
+                                }
+                                return (
+                                  <g key={cell.key}>
+                                    {/* Part Board Base Rectangle */}
+                                    <rect
+                                      x={cx}
+                                      y={cy}
+                                      width={cw}
+                                      height={ch}
+                                      fill={rectFill}
+                                      stroke={strokeColor}
+                                      strokeWidth={strokeW}
+                                      strokeDasharray={strokeDash}
+                                      rx="1.5"
+                                      className={isSelected ? "filter drop-shadow-[0_0_4px_rgba(79,70,229,0.4)]" : ""}
+                                    />
+                                    {/* Edge Banding Visual Indicators */}
+                                    {settings.edgeTh > 0 && renderT && (
+                                      <line
+                                        x1={cx + 1.5}
+                                        y1={cy + 1.5}
+                                        x2={cx + cw - 1.5}
+                                        y2={cy + 1.5}
+                                        stroke="#ea580c"
+                                        strokeWidth="3.5"
+                                        strokeDasharray="3,2"
+                                      />
+                                    )}
+                                    {settings.edgeTh > 0 && renderB && (
+                                      <line
+                                        x1={cx + 1.5}
+                                        y1={cy + ch - 1.5}
+                                        x2={cx + cw - 1.5}
+                                        y2={cy + ch - 1.5}
+                                        stroke="#ea580c"
+                                        strokeWidth="3.5"
+                                        strokeDasharray="3,2"
+                                      />
+                                    )}
+                                    {settings.edgeTh > 0 && renderL && (
+                                      <line
+                                        x1={cx + 1.5}
+                                        y1={cy + 1.5}
+                                        x2={cx + 1.5}
+                                        y2={cy + ch - 1.5}
+                                        stroke="#ea580c"
+                                        strokeWidth="3.5"
+                                        strokeDasharray="3,2"
+                                      />
+                                    )}
+                                    {settings.edgeTh > 0 && renderR && (
+                                      <line
+                                        x1={cx + cw - 1.5}
+                                        y1={cy + 1.5}
+                                        x2={cx + cw - 1.5}
+                                        y2={cy + ch - 1.5}
+                                        stroke="#ea580c"
+                                        strokeWidth="3.5"
+                                        strokeDasharray="3,2"
+                                      />
+                                    )}
+                                    {/* Text Labels inside Part */}
+                                    {cw > 45 && ch > 25 ? (
+                                      <>
+                                        <text
+                                          x={cx + cw / 2}
+                                          y={cy + ch / 2 - (ch > 40 ? 4 : 0)}
+                                          textAnchor="middle"
+                                          fill={textFill}
+                                          fontSize={ch > 40 ? "11" : "9"}
+                                          fontWeight="bold"
+                                          className="select-none pointer-events-none drop-shadow-sm"
+                                        >
+                                          {part.name}
+                                        </text>
+                                        {ch > 40 && (
+                                          <text
+                                            x={cx + cw / 2}
+                                            y={cy + ch / 2 + 10}
+                                            textAnchor="middle"
+                                            fill={textFill}
+                                            fontSize="8"
+                                            opacity="0.85"
+                                            className="select-none pointer-events-none"
+                                          >
+                                            {formatDim(part.origL)} x {formatDim(part.origW)}
+                                          </text>
+                                        )}
+                                      </>
+                                    ) : null}
+                                  </g>
+                                );
+                              });
+                            })()}
                           </g>
                         );
                       });
                     })()}
 
-                    {/* 3.4. Sahira Active Cutting Laser Guide & Minimap Overlay */}
-                    {activeStep && (
-                      <g id={`sahira-active-cut-guide-${layout.sheetIndex}`}>
-                        {(() => {
-                          const isVerticalCut = activeStep.direction === 'VERTICAL';
-                          const pos = pad + T + activeStep.position;
-                          
-                          // Determine line endpoints
-                          let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-                          let arrowD = "";
-                          let labelX = 0, labelY = 0;
-                          
-                          if (isVerticalCut) {
-                            x1 = pos;
-                            y1 = pad + T;
-                            x2 = pos;
-                            y2 = pad + T + layout.height;
-                            
-                            // Glowing bounce arrow pointing downwards
-                            arrowD = `M ${pos - 8} ${y1 + 30} L ${pos} ${y1 + 45} L ${pos + 8} ${y1 + 30} Z`;
-                            labelX = pos;
-                            labelY = y1 + 15;
-                          } else {
-                            x1 = pad + T;
-                            y1 = pos;
-                            x2 = pad + T + layout.width;
-                            y2 = pos;
-                            
-                            // Glowing bounce arrow pointing rightwards
-                            arrowD = `M ${x1 + 30} ${pos - 8} L ${x1 + 45} ${pos} L ${x1 + 30} ${pos + 8} Z`;
-                            labelX = x1 + 15;
-                            labelY = pos;
-                          }
-                          
-                          return (
-                            <g className="pointer-events-none transform-gpu">
-                              {/* Minimap Info Box Overlay */}
-                              <foreignObject 
-                                x={pad + 10} 
-                                y={pad + 10} 
-                                width="240" 
-                                height="100"
-                                className="drop-shadow-2xl"
-                              >
-                                <div className="bg-slate-900/95 border-2 border-rose-500 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white font-sans flex flex-col gap-2">
-                                  <div className="flex justify-between items-center border-b border-slate-700/80 pb-1.5">
-                                     <span className="text-[10px] uppercase font-black text-rose-400 tracking-widest flex items-center gap-1.5">
-                                       <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping"></div>
-                                       {isHindi ? "लाइव कटिंग मैपिंग" : "LIVE CUT MAP"}
-                                     </span>
-                                     <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-md font-black">
-                                        STEP {activeStep.stepId}
-                                     </span>
-                                  </div>
-                                  <div className="flex gap-3 items-center mt-1">
-                                     <div className="w-10 h-10 bg-slate-800 rounded-lg border border-slate-600 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
-                                       {activeStep.direction === 'VERTICAL' ? (
-                                          <div className="w-0.5 h-6 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
-                                       ) : (
-                                          <div className="w-6 h-0.5 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div>
-                                       )}
-                                     </div>
-                                     <div className="overflow-hidden">
-                                       <div className="text-[12px] font-black text-slate-100 truncate">{activeStep.localName}</div>
-                                       <div className="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-1.5">
-                                         {isHindi ? 'फेंस (Fence):' : 'Fence:'} 
-                                         <span className="text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{activeStep.fenceSetting}</span>
-                                       </div>
-                                     </div>
-                                  </div>
-                                </div>
-                              </foreignObject>
-
-                              {/* Glowing laser background line */}
-                              <line 
-                                x1={x1} 
-                                y1={y1} 
-                                x2={x2} 
-                                y2={y2} 
-                                stroke="#f43f5e" 
-                                strokeWidth="16" 
-                                strokeLinecap="round"
-                                opacity="0.25"
-                                className="blur-[4px]"
-                              />
-                              
-                              {/* Primary bright cutting line */}
-                              <line 
-                                x1={x1} 
-                                y1={y1} 
-                                x2={x2} 
-                                y2={y2} 
-                                stroke="#f43f5e" 
-                                strokeWidth="3" 
-                                strokeDasharray="8,4"
-                                opacity="0.95"
-                              />
-                              
-                              {/* Arrow representing cutting direction */}
-                              <path 
-                                d={arrowD} 
-                                fill="#f43f5e" 
-                                className="animate-pulse drop-shadow-md"
-                              />
-
-                              {/* Glowing target crosshair/badge */}
-                              <circle 
-                                cx={labelX} 
-                                cy={labelY} 
-                                r="12" 
-                                fill="#f43f5e" 
-                                stroke="#ffffff" 
-                                strokeWidth="2.5" 
-                                className="drop-shadow-lg"
-                              />
-                              <text 
-                                x={labelX} 
-                                y={labelY} 
-                                textAnchor="middle" 
-                                dominantBaseline="central" 
-                                fill="#ffffff" 
-                                fontSize="10" 
-                                fontWeight="black"
-                              >
-                                {activeStep.stepId}
-                              </text>
-
-                              {/* Saw Icon Label */}
-                              <text
-                                x={labelX + (isVerticalCut ? 20 : 0)}
-                                y={labelY + (isVerticalCut ? 0 : 20)}
-                                textAnchor={isVerticalCut ? "start" : "middle"}
-                                dominantBaseline={isVerticalCut ? "central" : "hanging"}
-                                fill="#f43f5e"
-                                fontSize="18"
-                                className="animate-pulse drop-shadow-md"
-                              >
-                                ✂️
-                              </text>
-                            </g>
-                          );
-                        })()}
+                    {/* LIVE CUT MAPPING OVERLAY (GLOBAL) */}
+                    {activeStep && showStepSequencer && (
+                      <g className="pointer-events-none z-50">
+                        {activeStep.direction === 'VERTICAL' ? (
+                          <>
+                            <line 
+                              x1={pad + T + activeStep.position} 
+                              y1={0} 
+                              x2={pad + T + activeStep.position} 
+                              y2={svgH} 
+                              stroke="#f43f5e" 
+                              strokeWidth="3.5" 
+                              strokeDasharray="10,5" 
+                            />
+                            <circle cx={pad + T + activeStep.position} cy={pad / 2} r="12" fill="#f43f5e" />
+                            <text x={pad + T + activeStep.position} y={pad / 2} textAnchor="middle" dominantBaseline="central" fill="white" fontSize="14">✂️</text>
+                          </>
+                        ) : (
+                          <>
+                            <line 
+                              x1={0} 
+                              y1={pad + T + activeStep.position} 
+                              x2={svgW} 
+                              y2={pad + T + activeStep.position} 
+                              stroke="#f43f5e" 
+                              strokeWidth="3.5" 
+                              strokeDasharray="10,5" 
+                            />
+                            <circle cx={pad / 2} cy={pad + T + activeStep.position} r="12" fill="#f43f5e" />
+                            <text x={pad / 2} y={pad + T + activeStep.position} textAnchor="middle" dominantBaseline="central" fill="white" fontSize="14">✂️</text>
+                          </>
+                        )}
                       </g>
                     )}
-
-                    {/* 4. Measurement lines (rulers) around the sheet */}
-                    {/* Width Ruler (Right side) */}
-                    <line 
-                      x1={rawLMm + pad + 20} 
-                      y1={pad} 
-                      x2={rawLMm + pad + 20} 
-                      y2={rawWMm + pad} 
-                      stroke="#64748b" 
-                      strokeWidth="2" 
-                    />
-                    <path d={`M ${rawLMm + pad + 15} ${pad} L ${rawLMm + pad + 25} ${pad}`} stroke="#64748b" strokeWidth="2" />
-                    <path d={`M ${rawLMm + pad + 15} ${rawWMm + pad} L ${rawLMm + pad + 25} ${rawWMm + pad}`} stroke="#64748b" strokeWidth="2" />
-                    <text 
-                      x={rawLMm + pad + 35} 
-                      y={rawWMm / 2 + pad} 
-                      transform={`rotate(90, ${rawLMm + pad + 35}, ${rawWMm / 2 + pad})`}
-                      textAnchor="middle" 
-                      fill="#475569" 
-                      fontSize="24" 
-                      fontWeight="bold"
-                    >
-                      {displayW.toFixed(1)} {unit}
-                    </text>
-
-                    {/* Length Ruler (Bottom side) */}
-                    <line 
-                      x1={pad} 
-                      y1={rawWMm + pad + 20} 
-                      x2={rawLMm + pad} 
-                      y2={rawWMm + pad + 20} 
-                      stroke="#64748b" 
-                      strokeWidth="2" 
-                    />
-                    <path d={`M ${pad} ${rawWMm + pad + 15} L ${pad} ${rawWMm + pad + 25}`} stroke="#64748b" strokeWidth="2" />
-                    <path d={`M ${rawLMm + pad} ${rawWMm + pad + 15} L ${rawLMm + pad} ${rawWMm + pad + 25}`} stroke="#64748b" strokeWidth="2" />
-                    <text 
-                      x={rawLMm / 2 + pad} 
-                      y={rawWMm + pad + 45} 
-                      textAnchor="middle" 
-                      fill="#475569" 
-                      fontSize="24" 
-                      fontWeight="bold"
-                    >
-                      {displayL.toFixed(1)} {unit}
-                    </text>
                   </svg>
-                  </div>
                 </div>
-
-                {/* Selected Part Panel for mobile and easy clicking */}
-                {(() => {
-                  if (editingSheetIndex !== layout.sheetIndex) return null;
-                  const selectedPart = editingParts.find(p => p.id === selectedPartId);
-                  
-                  return (
-                    <div className="w-full max-w-4xl mt-4 bg-indigo-50 border border-indigo-100 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-fade-in">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-indigo-600 text-white rounded-xl">
-                          <Sliders size={16} />
-                        </div>
-                        <div>
-                          {selectedPart ? (
-                            <>
-                              <p className="text-xs font-extrabold text-indigo-900">
-                                {isHindi ? `चयनित पुर्जा: ${selectedPart.name}` : `Selected Part: ${selectedPart.name}`}
-                              </p>
-                              <p className="text-[10px] text-indigo-700 font-semibold mt-0.5">
-                                {isHindi ? 'तैयार आकार' : 'Size'}: {formatDimPair(selectedPart.origL, selectedPart.origW)} | {isHindi ? 'स्थिति' : 'Coords'}: X={convertMmToUnit(selectedPart.x, unit).toFixed(1)} {unit}, Y={convertMmToUnit(selectedPart.y, unit).toFixed(1)} {unit}
-                              </p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="text-xs font-extrabold text-slate-500">
-                                {isHindi ? "किसी पुर्जे को सिलेक्ट करें" : "Select a part to modify"}
-                              </p>
-                              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                {isHindi ? "घुमाने या खिसकाने के लिए किसी भी पुर्जे पर क्लिक करें।" : "Click any part on the sheet to rotate or align it."}
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {selectedPart && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleRotatePart(selectedPart.id)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-100 transition-colors"
-                          >
-                            <RotateCw size={13} />
-                            {isHindi ? "घुमाएं 90° (Rotate)" : "Rotate 90°"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
               </div>
 
-              {/* Tables Section: Parts & Waste side-by-side */}
-              <div className="px-6 py-4 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <PlacedPartsTable
                   layout={layout}
                   translations={translations}
                   isHindi={isHindi}
                   unit={unit}
+                  edgeTh={settings.edgeTh}
                   getPartColor={getPartColor}
                   formatDimPair={formatDimPair}
                   getEdgeBandingSummary={getEdgeBandingSummary}
@@ -1990,103 +1748,17 @@ export default function LayoutVisualizerPanel({
         })}
       </div>
 
-   {/* Grand Total Summary Node */}
+      {/* Grand Total Summary Node */}
       {layouts.length > 0 && (
-        <div className="mt-8 bg-indigo-900 rounded-2xl p-6 text-white shadow-xl">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <span className="bg-indigo-500 p-1.5 rounded-lg">📋</span>
-              {isHindi ? 'कुल सामग्री सारांश (Grand Total)' : 'Grand Total Summary'}
-            </h3>
-            <button
-              onClick={() => setShowGrandSummary(!showGrandSummary)}
-              className="bg-indigo-700 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-colors"
-            >
-              {showGrandSummary 
-                ? (isHindi ? 'सारांश छिपाएं' : 'Hide Summary') 
-                : (isHindi ? 'सारांश दिखाएं' : 'Generate Summary')}
-            </button>
-          </div>
-          
-          {showGrandSummary && (
-            <div className="bg-indigo-950/50 rounded-xl overflow-hidden border border-indigo-500/20 animate-in fade-in slide-in-from-top-4 duration-300">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-indigo-900/80 text-indigo-200">
-                  <tr>
-                    <th className="py-3 px-4">{isHindi ? 'आइटम का नाम / आकार' : 'Item Name / Size'}</th>
-                    <th className="py-3 px-4 text-center">{isHindi ? 'कुल मात्रा' : 'Total Qty'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-indigo-800/30">
-                  {(() => {
-                    const globalGroup = new Map<string, any>();
-                    layouts.forEach(layout => {
-                      const materialName = layout.stockItem?.name || 'Standard';
-                      layout.parts.forEach(p => {
-                        const edgesSummary = getEdgeBandingSummary(p.edges, isHindi);
-                        const edgeTape = p.edgeMaterialId 
-                          ? (settings.edgeBandItems?.find(e => e.id === p.edgeMaterialId)?.name || 'Default Tape')
-                          : 'Default Tape';
-                        
-                        const key = `${p.name}_${p.origL}_${p.origW}_${materialName}_${edgesSummary}_${edgeTape}`;
-                        if (globalGroup.has(key)) {
-                          globalGroup.get(key)!.qty += 1;
-                        } else {
-                          globalGroup.set(key, { 
-                            name: p.name, 
-                            l: p.origL, 
-                            w: p.origW, 
-                            qty: 1,
-                            material: materialName,
-                            edges: edgesSummary,
-                            edgeTape: edgeTape
-                          });
-                        }
-                      });
-                    });
-                    
-                    let grandTotalQty = 0;
-                    
-                    return Array.from(globalGroup.values()).map((p, idx) => {
-                      grandTotalQty += p.qty;
-                      
-                      return (
-                        <tr key={idx} className="hover:bg-indigo-800/20">
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-lg">{p.name}</div>
-                            <div className="text-sm text-indigo-300 font-mono mt-1">{p.l.toFixed(1)} x {p.w.toFixed(1)} {settings.unit}</div>
-                            <div className="flex flex-col gap-0.5 mt-2 text-xs text-indigo-200">
-                              <div><span className="opacity-60">{isHindi ? 'बोर्ड मटीरियल:' : 'Board Material:'}</span> {p.material}</div>
-                              {p.edges !== '-' && p.edges !== 'कोई नहीं' && p.edges !== 'None' && (
-                                <div>
-                                  <span className="opacity-60">{isHindi ? 'एज बैंडिंग:' : 'Edge Banding:'}</span> {p.edges} ({p.edgeTape})
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center align-middle font-black text-2xl text-emerald-300">
-                            {p.qty}
-                          </td>
-                        </tr>
-                      );
-                    }).concat([
-                      <tr key="total" className="bg-indigo-800/50 font-bold text-lg border-t-2 border-indigo-500">
-                        <td className="py-4 px-4 text-right">
-                          {isHindi ? 'कुल पीसेस (Total Pieces) :' : 'Total Pieces :'}
-                        </td>
-                        <td className="py-4 px-4 text-center text-emerald-400 font-black text-2xl">
-                          {grandTotalQty}
-                        </td>
-                      </tr>
-                    ]);
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <GrandTotalSummary
+          layouts={layouts}
+          isHindi={isHindi}
+          translations={translations}
+          showGrandSummary={showGrandSummary}
+          setShowGrandSummary={setShowGrandSummary}
+          settings={settings}
+        />
       )}
-
     </div>
   );
 }

@@ -7,6 +7,7 @@ interface KpiStatsGridProps {
   overallWastePercent: number;
   totalSheetsUsed: number;
   totalBandingLength: number;
+  totalKerfLossMm2?: number;
   settings: SheetSettings;
   translations: any;
   isHindi: boolean;
@@ -18,13 +19,14 @@ export default function KpiStatsGrid({
   overallWastePercent,
   totalSheetsUsed,
   totalBandingLength,
+  totalKerfLossMm2 = 0,
   settings,
   translations,
   isHindi,
   unit
 }: KpiStatsGridProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
       {/* Efficiency */}
       <div className="bg-indigo-900 text-white rounded-2xl p-6 shadow-md shadow-indigo-100 flex flex-col justify-between h-full group hover:scale-[1.01] transition-transform duration-200">
         <div>

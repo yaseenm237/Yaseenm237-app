@@ -111,6 +111,7 @@ export interface SheetSettings {
   sheetW: number;
   bladeTh: number; // Kerf in mm
   trimMargin: number; // Trim in mm
+  trimEdges?: { top: boolean; bottom: boolean; left: boolean; right: boolean };
   edgeTh: number; // Edge banding thickness in mm
   stock: number; // Quantity of sheets in stock
   algorithm: string;
@@ -125,6 +126,7 @@ export interface SheetSettings {
 
 export interface PackedPart {
   id: string;
+  internalId?: string;
   name: string;
   x: number;
   y: number;
@@ -142,6 +144,12 @@ export interface PackedPart {
   backLaminateId?: string;
   drillHoles?: DrillHole[];
   partNumber?: number;
+
+  isSuper?: boolean;
+  colCount?: number;
+  rowCount?: number;
+  innerW?: number;
+  innerH?: number;
 }
 
 export interface SheetLayout {

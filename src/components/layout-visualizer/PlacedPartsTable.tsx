@@ -6,6 +6,7 @@ interface PlacedPartsTableProps {
   translations: any;
   isHindi: boolean;
   unit: string;
+  edgeTh: number;
   getPartColor: (name: string, index: number) => string;
   formatDimPair: (lMm: number, wMm: number) => string;
   getEdgeBandingSummary: (edges: any, isHindi: boolean) => string;
@@ -18,6 +19,7 @@ export default function PlacedPartsTable({
   translations,
   isHindi,
   unit,
+  edgeTh,
   getPartColor,
   formatDimPair,
   getEdgeBandingSummary,
@@ -38,7 +40,7 @@ export default function PlacedPartsTable({
               <th className="pb-2">{translations.part_size}</th>
               <th className="pb-2">{translations.cut_size} ({unit})</th>
               <th className="pb-2">{translations.h_grain}</th>
-              <th className="pb-2">{translations.applied_banding}</th>
+              {edgeTh > 0 && <th className="pb-2">{translations.applied_banding}</th>}
               <th className="pb-2">{isHindi ? 'माइका (सामने/पीषे)' : 'Mica (Front/Back)'}</th>
             </tr>
           </thead>
@@ -48,9 +50,9 @@ export default function PlacedPartsTable({
               layout.parts.forEach(p => {
                 const key = `${p.name}_${p.origL}_${p.origW}_${p.cutL}_${p.cutW}_${p.grain}_${JSON.stringify(p.edges)}_${p.frontLaminateId || ''}_${p.backLaminateId || ''}`;
                 if (groupedParts.has(key)) {
-                  groupedParts.get(key)!.qty += 1;
+                  groupedParts.get(key)!.qty += (p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1);
                 } else {
-                  groupedParts.set(key, { ...p, qty: 1 });
+                  groupedParts.set(key, { ...p, qty: (p.isSuper ? ((p.colCount || 1) * (p.rowCount || 1)) : 1) });
                 }
               });
               
@@ -77,9 +79,11 @@ export default function PlacedPartsTable({
                   <td className="py-2">
                     {p.grain === 'L' ? (isHindi ? 'लंबाई ↕' : 'Length ↕') : p.grain === 'W' ? (isHindi ? 'चौड़ाई ↔' : 'Width ↔') : (isHindi ? 'कोई नहीं' : 'None')}
                   </td>
-                  <td className="py-2 text-indigo-600 font-semibold text-[11px]">
-                    {getEdgeBandingSummary(p.edges, isHindi)}
-                  </td>
+                  {edgeTh > 0 && (
+                    <td className="py-2 text-indigo-600 font-semibold text-[11px]">
+                      {getEdgeBandingSummary(p.edges, isHindi)}
+                    </td>
+                  )}
                   <td className="py-2 text-emerald-600 font-semibold text-[11px]">
                     {p.frontLaminateId || p.backLaminateId ? (
                       <span className="flex flex-col gap-0.5">
