@@ -3,7 +3,7 @@ import { PartInput, SheetSettings } from './types';
 export const TRANSLATIONS = {
   English: {
     title: "Smart Carpentry Optimizer",
-    subtitle: "Sahira Interior",
+    subtitle: "Shahirah Interior",
     sheet_l: "Sheet Length",
     sheet_w: "Sheet Width",
     blade_th: "Kerf (mm)",
@@ -56,7 +56,7 @@ export const TRANSLATIONS = {
   },
   Hindi: {
     title: "स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र",
-    subtitle: "साहिरा इंटीरियर (Sahira Interior)",
+    subtitle: "साहिरा इंटीरियर (Shahirah Interior)",
     sheet_l: "शीट लंबाई",
     sheet_w: "शीट चौड़ाई",
     blade_th: "ब्लेड मोटाई (mm)",

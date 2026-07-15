@@ -113,7 +113,7 @@ export default function SavedFilesModal({
         text += `• Total parts: ${job.parts.length} pcs\n`;
         text += `• Sheets required: ${result.totalSheetsUsed} sheets\n`;
         text += `• Efficiency: ${result.totalUtilization.toFixed(1)}%\n\n`;
-        text += `_Sahira Interior - Smart Carpentry Optimizer_`;
+        text += `_Shahirah Interior - Smart Carpentry Optimizer_`;
       }
 
       if (navigator.share) {

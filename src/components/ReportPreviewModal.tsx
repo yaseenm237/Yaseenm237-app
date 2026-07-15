@@ -113,7 +113,7 @@ export default function ReportPreviewModal({
         text += `\n`;
       });
 
-      text += `_Sahira Interior - Smart Carpentry Optimizer_`;
+      text += `_Shahirah Interior - Smart Carpentry Optimizer_`;
     }
 
     try {
@@ -228,7 +228,7 @@ export default function ReportPreviewModal({
               <div className="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-end">
                 <div>
                   <h1 className="text-xl font-black tracking-tight text-slate-900 uppercase">
-                    Sahira Interior - Workshop Report
+                    Shahirah Interior - Workshop Report
                   </h1>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                     {isHindi ? 'स्मार्ट बढ़ईगिरी नक्शा और कटिंग सूची' : 'Smart Carpentry Nesting Blueprint'}
@@ -514,7 +514,7 @@ export default function ReportPreviewModal({
 
               {/* Page Footer inside Paper */}
               <div className="mt-12 border-t border-slate-200 pt-4 text-center text-[9px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                <span>Sahira Interior Carpentry Platform</span>
+                <span>Shahirah Interior Carpentry Platform</span>
                 <span>Page {activePage} of {totalPages}</span>
               </div>
             </div>

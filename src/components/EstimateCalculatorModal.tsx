@@ -127,7 +127,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
   const handleCopyWhatsApp = () => {
     let text = "";
     if (isHindi) {
-      text = `*📐 Sahira Interior - एस्टीमेट बिल 📐*\n\n`;
+      text = `*📐 Shahirah Interior - एस्टीमेट बिल 📐*\n\n`;
       text += `*दिनांक (Date):* ${new Date().toLocaleDateString()}\n`;
       text += `-------------------------------------------\n`;
       
@@ -152,7 +152,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
       text += `*कुल फाइनल बिल (Total Bill):* *₹${totalCost.toFixed(2)}*\n\n`;
       text += `_साहिरा इंटीरियर - स्मार्ट बढ़ईगिरी ऑप्टिमाइज़र_`;
     } else {
-      text = `*📐 Sahira Interior - Estimate Bill 📐*\n\n`;
+      text = `*📐 Shahirah Interior - Estimate Bill 📐*\n\n`;
       text += `*Date:* ${new Date().toLocaleDateString()}\n`;
       text += `-------------------------------------------\n`;
       
@@ -175,7 +175,7 @@ export default function EstimateCalculatorModal({ onClose, language }: EstimateC
       text += `-------------------------------------------\n`;
       text += `*Total Area:* ${totalSqft.toFixed(2)} Sq.Ft\n`;
       text += `*Grand Total:* *₹${totalCost.toFixed(2)}*\n\n`;
-      text += `_Sahira Interior - Smart Carpentry Optimizer_`;
+      text += `_Shahirah Interior - Smart Carpentry Optimizer_`;
     }
 
     try {
