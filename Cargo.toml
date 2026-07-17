@@ -1,0 +1,23 @@
+[package]
+name = "shahirah_interior"
+version = "0.1.0"
+edition = "2021"
+description = "Pure Rust Desktop App for Smart Carpentry Optimizer with Matrix Chat"
+
+[dependencies]
+# Dioxus 0.5 with Desktop feature enabled (Native cross-platform WebView)
+dioxus = { version = "0.5", features = ["desktop"] }
+
+# Async runtime (required for networking, matrix-sdk, and background tasks)
+tokio = { version = "1", features = ["full"] }
+
+# Matrix SDK for Element-X style live chat and A/V signaling
+matrix-sdk = "0.7"
+
+# Serialization for settings and network requests
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging framework
+tracing = "0.1"
+tracing-subscriber = "0.3"

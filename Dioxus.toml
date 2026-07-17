@@ -1,0 +1,32 @@
+[application]
+# App (Project) Name
+name = "shahirah_interior"
+# The default platform to build (desktop for standalone native app)
+default_platform = "desktop"
+# The output directory for the compiled application
+out_dir = "dist"
+# The directory containing local assets (images, stylesheets, etc.)
+asset_dir = "public"
+
+[desktop.app]
+# Title of the desktop window
+title = "Shahirah Interior - Carpentry Optimizer"
+# The initial width of the window
+width = 1200
+# The initial height of the window
+height = 800
+# Whether the window is resizable
+resizable = true
+
+[web.app]
+# Title of the app (if compiled for web/WASM)
+title = "Shahirah Interior"
+
+[web.watcher]
+# Directories for the Dioxus CLI to watch for hot-reloading during development
+watch_path = ["src", "public"]
+
+[web.resource]
+# Any external stylesheets or scripts to include
+style = []
+script = []
