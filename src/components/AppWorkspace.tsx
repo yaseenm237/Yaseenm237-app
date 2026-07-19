@@ -22,6 +22,7 @@ import SavedFilesModal from './SavedFilesModal';
 import CabinetDesignerModal from './CabinetDesignerModal';
 import AttendanceModal from './AttendanceModal';
 import AboutModal from './AboutModal';
+import AppFlowMapModal from './AppFlowMapModal';
 import UserSessionsModal from './UserSessionsModal';
 import WorkerSelfEntryPortal from './WorkerSelfEntryPortal';
 import CuttingListPanel from './CuttingListPanel';
@@ -32,6 +33,7 @@ import ToastContainer from './Toast';
 import HeaderMenu from './HeaderMenu';
 
 export default function AppWorkspace() {
+  const [isMapOpen, setIsMapOpen] = useState(false);
   const {
     appConfig,
     setAppConfig,
@@ -210,6 +212,7 @@ export default function AppWorkspace() {
             onOpenExport={() => setIsExportOpen(true)}
             onOpenAttendance={() => setIsAttendanceOpen(true)}
             onOpenUserSessions={() => setIsUserSessionsOpen(true)}
+            onOpenMap={() => setIsMapOpen(true)}
             canUndo={canUndo}
             canRedo={canRedo}
             onUndo={handleUndo}

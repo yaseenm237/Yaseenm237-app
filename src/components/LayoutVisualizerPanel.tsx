@@ -83,6 +83,7 @@ export default function LayoutVisualizerPanel({
   const [editingParts, setEditingParts] = useState<PackedPart[]>([]);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ clientX: number; clientY: number; startX: number; startY: number; partId: string } | null>(null);
+  const [hoverTooltip, setHoverTooltip] = useState<{ id: string, name: string, w: number, h: number, x: number, y: number, sheetIndex: number, clientX: number, clientY: number } | null>(null);
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
 
   const [savedOffcuts, setSavedOffcuts] = useState<string[]>([]);
@@ -1085,6 +1086,9 @@ export default function LayoutVisualizerPanel({
                         if (editingSheetIndex === layout.sheetIndex) {
                           handleSvgMouseMove(e, layout.width, layout.height, svgW, svgH);
                         }
+                        if (hoverTooltip && hoverTooltip.sheetIndex === layout.sheetIndex) {
+                          setHoverTooltip(prev => prev ? { ...prev, clientX: e.clientX, clientY: e.clientY } : null);
+                        }
                       }}
                       onTouchMove={(e) => {
                         if (editingSheetIndex === layout.sheetIndex) {
@@ -1758,6 +1762,21 @@ export default function LayoutVisualizerPanel({
           setShowGrandSummary={setShowGrandSummary}
           settings={settings}
         />
+      )}
+      {/* Floating Tooltip */}
+      {hoverTooltip && (
+        <div 
+          className="fixed z-50 pointer-events-none bg-slate-900 text-white p-3 rounded-lg shadow-xl border border-slate-700 transform -translate-x-1/2 -translate-y-full flex flex-col gap-1"
+          style={{ left: hoverTooltip.clientX, top: hoverTooltip.clientY - 15 }}
+        >
+          <div className="font-bold text-sm text-amber-400">{hoverTooltip.name}</div>
+          <div className="text-xs font-mono text-slate-200">
+            Dimensions: {convertMmToUnit(hoverTooltip.w, unit).toFixed(1)} × {convertMmToUnit(hoverTooltip.h, unit).toFixed(1)} {unit}
+          </div>
+          <div className="text-xs font-mono text-slate-400">
+            Position: {convertMmToUnit(hoverTooltip.x, unit).toFixed(1)}, {convertMmToUnit(hoverTooltip.y, unit).toFixed(1)}
+          </div>
+        </div>
       )}
     </div>
   );

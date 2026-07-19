@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  MoreVertical, 
+  MoreVertical,
+  Layout, 
   Folder, 
   Calculator, 
   Rocket, 
@@ -21,6 +22,7 @@ interface HeaderMenuProps {
   onOpenExport: () => void;
   onOpenAttendance: () => void;
   onOpenUserSessions: () => void;
+  onOpenMap: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -36,6 +38,7 @@ export default function HeaderMenu({
   onOpenExport,
   onOpenAttendance,
   onOpenUserSessions,
+  onOpenMap,
   canUndo,
   canRedo,
   onUndo,
@@ -79,6 +82,21 @@ export default function HeaderMenu({
           </div>
           
           <div className="p-2 flex flex-col gap-1">
+
+            <button
+              onClick={() => { onOpenMap(); closeMenu(); }}
+              className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-slate-50 text-slate-700 hover:text-orange-600 group transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-1.5 bg-orange-100 text-orange-600 rounded-lg group-hover:scale-110 transition-transform">
+                  <Layout size={18} />
+                </div>
+                <div className="text-left flex flex-col">
+                  <span className="font-semibold text-sm">{isHindi ? 'लॉजिक मैप (App Flow)' : 'App Flow Map'}</span>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-slate-400 group-hover:text-orange-600 transition-colors" />
+            </button>
             <button
               onClick={() => { onOpenSavedFiles(); closeMenu(); }}
               className="flex items-center justify-between w-full p-2.5 rounded-xl hover:bg-slate-50 text-slate-700 hover:text-indigo-600 group transition-colors cursor-pointer"
